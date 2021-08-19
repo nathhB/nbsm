@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.0)
 
 project(nbsm_editor C)
 
-add_compile_options(-Wall -Wextra)
+add_compile_options(-Wall -Wextra -Wno-unknown-pragmas)
 
 add_executable(nbsm_editor editor.c)
 

@@ -75,6 +75,17 @@ typedef struct
     NBSM_State *current;
 } NBSM_Machine;
 
+typedef struct __NBSM_ValueDesc NBSM_ValueDesc;
+
+struct __NBSM_ValueDesc
+{
+    char *name;
+    NBSM_ValueType type;
+    void *user_data; // user defined data (used by the editor)
+    NBSM_ValueDesc *next;
+    NBSM_ValueDesc *prev;
+};
+
 typedef bool (*NBSM_ConditionFunc)(NBSM_Value *v1, NBSM_Value *v2);
 
 typedef struct
@@ -102,12 +113,17 @@ struct __NBSM_State
 
 #pragma region "Descriptors"
 
-typedef struct
+typedef struct __NBSM_ConditionDesc NBSM_ConditionDesc;
+
+struct __NBSM_ConditionDesc
 {
-    const char *var_name;
     NBSM_ConditionType type;
-    NBSM_Value value; 
-} NBSM_ConditionDesc;
+    NBSM_ValueDesc *var;
+    NBSM_Value constant;
+    void *user_data; // user defined data (used by the editor)
+    NBSM_ConditionDesc *next;
+    NBSM_ConditionDesc *prev;
+};
 
 typedef struct __NBSM_StateDesc NBSM_StateDesc;
 typedef struct __NBSM_TransitionDesc NBSM_TransitionDesc;
@@ -116,7 +132,7 @@ struct __NBSM_TransitionDesc
 {
     NBSM_StateDesc *src_state;
     NBSM_StateDesc *target_state;
-    NBSM_ConditionDesc conditions[NBSM_MAX_CONDITIONS_PER_TRANSITION];
+    NBSM_ConditionDesc *conditions;
     unsigned int condition_count;
     void *user_data; // user defined data (used by the editor)
     NBSM_TransitionDesc *next;
@@ -132,17 +148,6 @@ struct __NBSM_StateDesc
     void *user_data; // user defined data (used by the editor)
     NBSM_StateDesc *next;
     NBSM_StateDesc *prev;
-};
-
-typedef struct __NBSM_ValueDesc NBSM_ValueDesc;
-
-struct __NBSM_ValueDesc
-{
-    char *name;
-    NBSM_ValueType type;
-    void *user_data; // user defined data (used by the editor)
-    NBSM_ValueDesc *next;
-    NBSM_ValueDesc *prev;
 };
 
 typedef struct
@@ -180,6 +185,13 @@ NBSM_TransitionDesc *NBSM_AddTransitionDesc(NBSM_StateDesc *from, NBSM_StateDesc
 NBSM_TransitionDesc *NBSM_RemoveTransitionDesc(NBSM_TransitionDesc *desc);
 NBSM_ValueDesc *NBSM_AddValueDesc(NBSM_MachineDesc *machine_desc, char *name, NBSM_ValueType type, void *user_name);
 NBSM_ValueDesc *NBSM_RemoveValueDesc(NBSM_MachineDesc *machine_desc, NBSM_ValueDesc *desc);
+NBSM_ConditionDesc *NBSM_AddCondition(
+        NBSM_TransitionDesc *trans_desc,
+        NBSM_ConditionType type,
+        NBSM_ValueDesc *var_desc,
+        NBSM_Value constant,
+        void *user_data);
+NBSM_ConditionDesc *NBSM_RemoveCondition(NBSM_TransitionDesc *trans_desc, NBSM_ConditionDesc *desc);
 
 #endif // NBSM_DESCRIPTOR_API
 
@@ -533,8 +545,8 @@ static void BuildCondition(NBSM_Machine *machine, NBSM_Condition *condition, NBS
     assert(condition->v1->type == condition->v2.type);
 
     condition->func = condition_funcs[desc->type];
-    condition->v1 = GetInHTable(machine->values, desc->var_name);
-    condition->v2 = desc->value;
+    condition->v1 = GetInHTable(machine->values, desc->var->name);
+    condition->v2 = desc->constant;
 }
 
 static bool ConditionEquals(NBSM_Value *v1, NBSM_Value *v2)
@@ -807,6 +819,70 @@ NBSM_ValueDesc *NBSM_RemoveValueDesc(NBSM_MachineDesc *machine_desc, NBSM_ValueD
     }
 
     machine_desc->value_count--;
+
+    return desc;
+}
+
+NBSM_ConditionDesc *NBSM_AddCondition(
+        NBSM_TransitionDesc *trans_desc,
+        NBSM_ConditionType type,
+        NBSM_ValueDesc *var_desc,
+        NBSM_Value constant,
+        void *user_data)
+{
+    NBSM_ConditionDesc *desc = NBSM_Alloc(sizeof(NBSM_ConditionDesc));
+
+    desc->type = type;
+    desc->var = var_desc;
+    desc->constant = constant;
+    desc->user_data = user_data;
+
+    if (!trans_desc->conditions)
+    {
+        desc->prev = NULL;
+        desc->next = NULL;
+
+        trans_desc->conditions = desc;
+    }
+    else
+    {
+        NBSM_ConditionDesc *c = trans_desc->conditions;
+
+        while (c->next)
+            c = c->next;
+
+        assert(!c->next);
+
+        desc->prev = c;
+        desc->next = NULL;
+
+        c->next = desc;
+    }
+
+    trans_desc->condition_count++;
+
+    return desc;
+}
+
+NBSM_ConditionDesc *NBSM_RemoveCondition(NBSM_TransitionDesc *trans_desc, NBSM_ConditionDesc *desc)
+{
+    if (!desc->prev)
+    {
+        // first item of the list
+        trans_desc->conditions = desc->next;
+
+        if (desc->next)
+            desc->next->prev = NULL;
+    }
+    else
+    {
+        desc->prev->next = desc->next;
+        
+        if (desc->next)
+            desc->next->prev = desc->prev;
+    }
+
+    trans_desc->condition_count--;
 
     return desc;
 }

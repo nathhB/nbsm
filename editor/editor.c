@@ -23,11 +23,19 @@
 #define MIN_STATE_WIDTH (CELL_SIZE*6)
 #define NEW_STATE_WIN_WIDTH 300
 #define NEW_STATE_WIN_HEIGHT 80
-#define VARIABLES_WIN_WIDTH 300
-#define VARIABLES_WIN_HEIGHT 200
-#define NEW_VARIABLE_WIN_WIDTH 260
-#define NEW_VARIABLE_WIN_HEIGHT 100
+#define VARIABLES_WIN_WIDTH 405
+#define VARIABLES_WIN_HEIGHT 350
+#define NEW_VARIABLE_WIN_WIDTH 350
+#define NEW_VARIABLE_WIN_HEIGHT 70
+#define NEW_CONDITION_WIN_WIDTH 350
+#define NEW_CONDITION_WIN_HEIGHT 70
+#define EDIT_TRANSITION_WIN_WIDTH 350
+#define EDIT_TRANSITION_WIN_HEIGHT 350
 #define TRANSITION_CIRCLE_RADIUS 3
+#define TRANSITION_LINE_COLOR ((Color){46, 117, 136, 255})
+#define TRANSITION_SELECTED_LINE_COLOR ((Color){94, 190, 189, 255})
+#define TRANSITION_ARROW_SIZE 10
+#define MAX_VAR_NAME_LENGTH 32
 
 #define min(a, b) (((a) < (b)) ? (a) : (b))
 #define max(a, b) (((a) > (b)) ? (a) : (b))
@@ -39,7 +47,9 @@ typedef enum
     NEW_STATE,
     NEW_TRANSITION,
     EDIT_VARIABLES,
-    NEW_VARIABLE
+    NEW_VARIABLE,
+    EDIT_TRANSITION,
+    NEW_CONDITION
 } State;
 
 typedef struct
@@ -51,22 +61,24 @@ typedef struct
 {
     Vector2 start;
     Vector2 end;
+    bool is_selected;
 } TransitionUI;
 
 typedef struct
 {
-    int active;
-    bool edit_mode;
 } VariableUI;
 
 NBSM_MachineDesc machine_desc;
 
 static NBSM_StateDesc *GetSelectedState(void);
+static NBSM_TransitionDesc *GetSelectedTransition(Vector2 pos);
 static NBSM_StateDesc *GetTransitionOveredState(Vector2 grid_pos);
 static void DoGUI(void);
 static void DoNewStateWindow(void);
 static void DoEditVariablesGUI(void);
 static void DoNewVariableGUI(void);
+static void DoNewConditionGUI(void);
+static void DoEditTransitionGUI(void);
 static void DoNewTransitionGUI(void);
 static void DoDraggingStateGUI(void);
 static void DoDefaultStateGUI(void);
@@ -79,8 +91,12 @@ static Vector2 SnapPositionToGrid(Vector2 v);
 static void SetStyle(void);
 static unsigned int ComputeStateWidth(NBSM_StateDesc *state_desc);
 static void RemoveState(NBSM_StateDesc *state_desc);
+static void RemoveValue(NBSM_ValueDesc *val_desc);
 static void RemoveAllStateRelatedTransitions(NBSM_StateDesc *state_desc);
 static void UpdateAllStateRelatedTransitionPositions(NBSM_StateDesc *state_desc, Vector2 move);
+static const char *GetTypeName(NBSM_ValueType type);
+static Vector2 GetTransitionArrowPos(NBSM_TransitionDesc *trans_desc);
+static void ResetTransitionSelection(void);
 
 static Rectangle viewport = {
     0, 0,
@@ -89,20 +105,23 @@ static Rectangle viewport = {
 };
 
 static Rectangle editor_viewport = {
-    0, CELL_SIZE, VIEWPORT_WIDTH, VIEWPORT_HEIGHT - CELL_SIZE
+    0, CELL_SIZE * 2, VIEWPORT_WIDTH, VIEWPORT_HEIGHT - CELL_SIZE
 };
 
 static State state = NONE;
 static NBSM_StateDesc *selected_state = NULL;
+static NBSM_TransitionDesc *selected_trans = NULL;
 static Vector2 drag_offset;
 static char state_name[255] = {0};
-static char var_name[32] = {0};
+static char var_name[MAX_VAR_NAME_LENGTH] = {0};
 static Vector2 transition_start_point;
 static NBSM_StateDesc *transition_start_state;
-static RenderTexture2D arrow_end_texture;
+static RenderTexture2D arrow_texture;
+static RenderTexture2D selected_arrow_texture;
 static Vector2 scroll; // used to store scroll panels scrolling amount
 static int dropdown_active = 0;
 static bool dropdown_edit_mode = false;
+static NBSM_ValueDesc *edited_var = NULL;
 
 int main(void)
 {
@@ -113,15 +132,25 @@ int main(void)
 
     SetStyle();
 
-    arrow_end_texture = LoadRenderTexture(10, 10);
+    arrow_texture = LoadRenderTexture(TRANSITION_ARROW_SIZE, TRANSITION_ARROW_SIZE);
+    selected_arrow_texture = LoadRenderTexture(TRANSITION_ARROW_SIZE, TRANSITION_ARROW_SIZE);
 
-    BeginTextureMode(arrow_end_texture);
+    BeginTextureMode(arrow_texture);
         ClearBackground((Color){255, 255, 255, 0});
         DrawTriangle(
-            (Vector2){arrow_end_texture.texture.width / 2, 0},
-            (Vector2){0, arrow_end_texture.texture.width},
-            (Vector2){arrow_end_texture.texture.width, arrow_end_texture.texture.height},
-            RED);
+            (Vector2){TRANSITION_ARROW_SIZE / 2, 0},
+            (Vector2){0, TRANSITION_ARROW_SIZE},
+            (Vector2){TRANSITION_ARROW_SIZE, TRANSITION_ARROW_SIZE},
+            TRANSITION_LINE_COLOR);
+    EndTextureMode();
+
+    BeginTextureMode(selected_arrow_texture);
+        ClearBackground((Color){255, 255, 255, 0});
+        DrawTriangle(
+            (Vector2){TRANSITION_ARROW_SIZE / 2, 0},
+            (Vector2){0, TRANSITION_ARROW_SIZE},
+            (Vector2){TRANSITION_ARROW_SIZE, TRANSITION_ARROW_SIZE},
+            TRANSITION_SELECTED_LINE_COLOR);
     EndTextureMode();
 
     while (!WindowShouldClose())
@@ -133,7 +162,8 @@ int main(void)
         EndDrawing();
     }
 
-    UnloadRenderTexture(arrow_end_texture);
+    UnloadRenderTexture(arrow_texture);
+    UnloadRenderTexture(selected_arrow_texture);
     CloseWindow();
 
     NBSM_DeinitMachineDesc(&machine_desc);
@@ -158,6 +188,36 @@ static NBSM_StateDesc *GetSelectedState(void)
 
         if (CheckCollisionPointRec(pos, rect))
             return state_desc;
+
+        state_desc = state_desc->next;
+    }
+
+    return NULL;
+}
+
+static NBSM_TransitionDesc *GetSelectedTransition(Vector2 pos)
+{
+    NBSM_StateDesc *state_desc = machine_desc.states;
+
+    while (state_desc)
+    {
+        NBSM_TransitionDesc *trans_desc = state_desc->transitions;
+
+        while (trans_desc)
+        {
+            Vector2 arrow_pos = GetTransitionArrowPos(trans_desc);
+            Rectangle rect = {
+                arrow_pos.x - arrow_texture.texture.width / 2,
+                arrow_pos.y - arrow_texture.texture.height / 2,
+                arrow_texture.texture.width,
+                arrow_texture.texture.height
+            };
+
+            if (CheckCollisionPointRec(pos, rect))
+                return trans_desc;
+
+            trans_desc = trans_desc->next;
+        }
 
         state_desc = state_desc->next;
     }
@@ -202,6 +262,25 @@ static void DoGUI(void)
     DoStatesGUI(); 
     DoTransitionsGUI();
 
+    if (state != NONE)
+        GuiDisable();
+
+    if (GuiButton((Rectangle){editor_viewport.width - 110, editor_viewport.y + 35, 100, 20}, "New state"))
+    {
+        state = NEW_STATE;
+
+        return;
+    }
+
+    if (GuiButton((Rectangle){editor_viewport.width - 220, editor_viewport.y + 35, 100, 20}, "Variables"))
+    {
+        state = EDIT_VARIABLES;
+
+        return;
+    }
+
+    GuiEnable();
+
     if (state == NEW_STATE)
         DoNewStateWindow(); 
     else if (state == NEW_TRANSITION)
@@ -212,6 +291,10 @@ static void DoGUI(void)
         DoEditVariablesGUI();
     else if (state == NEW_VARIABLE)
         DoNewVariableGUI();
+    else if (state == EDIT_TRANSITION)
+        DoEditTransitionGUI();
+    else if (state == NEW_CONDITION)
+        DoNewConditionGUI();
     else if (state == NONE)
         DoDefaultStateGUI();
 }
@@ -276,7 +359,7 @@ static void DoEditVariablesGUI(void)
     Rectangle content_rect = {0, 0, rect.width - 20, item_count * item_height};
     Rectangle view = GuiScrollPanel(scroll_pan_rect, content_rect, &scroll); 
 
-    if (GuiButton((Rectangle){ rect.x + rect.width - 45, rect.y + status_bar_h + 5, 40, 20 }, "Add"))
+    if (GuiButton((Rectangle){ rect.x + rect.width - 50, rect.y + status_bar_h + 5, 40, 20 }, "Add"))
     {
        state = NEW_VARIABLE;
 
@@ -290,16 +373,39 @@ static void DoEditVariablesGUI(void)
 
     while (val_desc)
     {
-        VariableUI *render_data = val_desc->user_data;
+        NBSM_ValueDesc *next = val_desc->next;
 
         GuiTextBox(
-            (Rectangle){rect.x + 17, (scroll_pan_rect.y + i * item_height) + scroll.y, 150, 20},
+            (Rectangle){rect.x + 17, (scroll_pan_rect.y + i * item_height) + scroll.y + 10, 150, 20},
             val_desc->name,
-            32,
-            false); 
+            MAX_VAR_NAME_LENGTH,
+            false);
+
+        const char *type_name = GetTypeName(val_desc->type);
+
+        GuiTextBox(
+            (Rectangle){rect.x + 177, (scroll_pan_rect.y + i * item_height) + scroll.y + 10, 100, 20},
+            type_name,
+            sizeof(type_name),
+            false);
+
+        if (GuiButton((Rectangle){rect.x + 287, (scroll_pan_rect.y + i * item_height) + scroll.y + 10, 50, 20}, "Edit"))
+        {
+            edited_var = val_desc;
+            dropdown_active = val_desc->type; 
+            state = NEW_VARIABLE;
+
+            strncpy(var_name, edited_var->name, MAX_VAR_NAME_LENGTH);
+        }
+
+        Rectangle delete_btn_rect = {
+            rect.x + rect.width - 60, (scroll_pan_rect.y + i * item_height) + scroll.y + 10, 50, 20};
+
+        if (GuiButton(delete_btn_rect, "Delete"))
+            RemoveValue(val_desc);
 
         i++;
-        val_desc = val_desc->next;
+        val_desc = next;
     }
 
     // EndScissorMode();
@@ -311,8 +417,23 @@ static void DoNewVariableGUI(void)
                       editor_viewport.height / 2 + editor_viewport.y - NEW_VARIABLE_WIN_HEIGHT / 2,
                       NEW_VARIABLE_WIN_WIDTH, NEW_VARIABLE_WIN_HEIGHT};
 
-    if (GuiWindowBox(rect, "New variable")) {
+    char title[255] = {0};
+
+    if (edited_var)
+    {
+        strncat(title, "Edit variable: ", sizeof(title) - 1);
+        strncat(title + strlen("Edit variable: "), edited_var->name, sizeof(title) - strlen("Edit variable :") - 1);
+    }
+    else
+    {
+        strncat(title, "New variable", sizeof(title) - 1);
+    }
+
+    if (GuiWindowBox(rect, title)) {
         state = EDIT_VARIABLES;
+        edited_var = NULL;
+
+        memset(var_name, 0, sizeof(var_name)); 
 
         return;
     }
@@ -322,27 +443,33 @@ static void DoNewVariableGUI(void)
     GuiTextBox(
         (Rectangle){rect.x + 10, rect.y + status_bar_h + 10, 150, 20},
         var_name,
-        sizeof(var_name),
+        MAX_VAR_NAME_LENGTH,
         true); 
 
-    if (strlen(var_name) < 1);
+    if (strlen(var_name) < 1)
         GuiDisable();
 
-    if (GuiButton((Rectangle){rect.x + rect.width - 90, rect.y + rect.height - 30, 80, 20}, "Create")) {
-        // char *name = malloc(32);
+    char *btn_name = edited_var ? "Save" : "Create";
 
-        // memset(name, 0, 32);
+    if (GuiButton((Rectangle){rect.x + rect.width - 90, rect.y + status_bar_h + 10 , 80, 20}, btn_name)) {
+        if (edited_var)
+        {
+            memset(edited_var->name, 0, MAX_VAR_NAME_LENGTH);
+            strncpy(edited_var->name, var_name, MAX_VAR_NAME_LENGTH);
 
-        // VariableUI *render_data = NBSM_Alloc(sizeof(VariableUI));
+            edited_var->type = dropdown_active;
+        }
+        else
+        {
+            NBSM_AddValueDesc(&machine_desc, strdup(var_name), dropdown_active, NULL);
+        }
 
-        // render_data->active = 0;
-        // render_data->edit_mode = false; 
+        state = EDIT_VARIABLES;
+        edited_var = NULL;
 
-        // NBSM_AddValueDesc(&machine_desc, name, NBSM_INTEGER, render_data);
+        memset(var_name, 0, sizeof(var_name));
 
-        /*if (content_rect.height > scroll_pan_rect.height)
-        scroll.y = -scroll_pan_rect.height;
-    */
+        return;
     }
 
     GuiEnable();
@@ -353,16 +480,58 @@ static void DoNewVariableGUI(void)
         dropdown_edit_mode = !dropdown_edit_mode;
 }
 
+static void DoNewConditionGUI(void)
+{
+    Rectangle rect = {editor_viewport.width / 2 - NEW_CONDITION_WIN_WIDTH / 2,
+        editor_viewport.height / 2 + editor_viewport.y - NEW_CONDITION_WIN_HEIGHT / 2,
+        NEW_CONDITION_WIN_WIDTH, NEW_CONDITION_WIN_HEIGHT};
+
+    if (GuiWindowBox(rect, "New condition"))
+    {
+        state = EDIT_TRANSITION;
+        return;
+    }
+}
+
+static void DoEditTransitionGUI(void)
+{
+    Rectangle rect = {editor_viewport.width / 2 - EDIT_TRANSITION_WIN_WIDTH / 2,
+                      editor_viewport.height / 2 + editor_viewport.y - EDIT_TRANSITION_WIN_HEIGHT / 2,
+                      EDIT_TRANSITION_WIN_WIDTH, EDIT_TRANSITION_WIN_HEIGHT};
+
+    if (GuiWindowBox(rect, "Edit transition"))
+    {
+        state = NONE;
+        selected_trans = NULL;
+
+        return;
+    }
+
+    int item_height = 25;
+    int status_bar_h = WINDOW_STATUSBAR_HEIGHT + 2*GuiGetStyle(STATUSBAR, BORDER_WIDTH);
+    unsigned int item_count = selected_trans->condition_count;
+    Rectangle scroll_pan_rect = (Rectangle){rect.x, rect.y + (status_bar_h - 2) + 30, rect.width, rect.height - status_bar_h - 30};
+    Rectangle content_rect = {0, 0, rect.width - 20, item_count * item_height};
+    Rectangle view = GuiScrollPanel(scroll_pan_rect, content_rect, &scroll); 
+
+    if (GuiButton((Rectangle){rect.x + rect.width - 50, rect.y + status_bar_h + 5, 40, 20}, "Add"))
+    {
+       state = NEW_CONDITION;
+
+       return;
+    }
+}
+
 static void DoNewTransitionGUI(void)
 {
-    DrawCircleV(transition_start_point, TRANSITION_CIRCLE_RADIUS, RED);
+    DrawCircleV(transition_start_point, TRANSITION_CIRCLE_RADIUS, TRANSITION_LINE_COLOR);
 
     Vector2 pos = Vector2Add(GetMousePosition(), (Vector2){CELL_SIZE / 2.0, CELL_SIZE / 2.0});
 
     pos = SnapPositionToGrid(ScreenPositionToSpacePosition(pos));
 
-    DrawLineV(transition_start_point, pos, RED);
-    DrawCircleV(pos, TRANSITION_CIRCLE_RADIUS, RED);
+    DrawLineEx(transition_start_point, pos, 2.0, TRANSITION_LINE_COLOR);
+    DrawCircleV(pos, TRANSITION_CIRCLE_RADIUS, TRANSITION_LINE_COLOR);
 
     if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
     {
@@ -374,6 +543,7 @@ static void DoNewTransitionGUI(void)
 
             render_data->start = transition_start_point;
             render_data->end = pos;
+            render_data->is_selected = false;
 
             NBSM_AddTransitionDesc(transition_start_state, state_desc, render_data);
         }
@@ -406,19 +576,7 @@ static void DoDraggingStateGUI(void)
 
 static void DoDefaultStateGUI(void)
 {
-    if (GuiButton((Rectangle){editor_viewport.width - 110, editor_viewport.y + 35, 100, 20}, "New state"))
-    {
-        state = NEW_STATE;
-
-        return;
-    }
-
-    if (GuiButton((Rectangle){editor_viewport.width - 220, editor_viewport.y + 35, 100, 20}, "Variables"))
-    {
-        state = EDIT_VARIABLES;
-
-        return;
-    }
+    ResetTransitionSelection(); 
 
     Vector2 pos = Vector2Add(GetMousePosition(), (Vector2){CELL_SIZE / 2.0, CELL_SIZE / 2.0});
 
@@ -428,7 +586,7 @@ static void DoDefaultStateGUI(void)
 
     if (state_desc)
     {
-        DrawCircleV(pos, TRANSITION_CIRCLE_RADIUS, RED);
+        DrawCircleV(pos, TRANSITION_CIRCLE_RADIUS, TRANSITION_LINE_COLOR);
 
         if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
         {
@@ -438,6 +596,13 @@ static void DoDefaultStateGUI(void)
 
             return;
         }
+    }
+    else
+    {
+        NBSM_TransitionDesc *trans_desc = GetSelectedTransition(ScreenPositionToSpacePosition(GetMousePosition()));
+
+        if (trans_desc)
+            ((TransitionUI *)trans_desc->user_data)->is_selected = true;
     }
 
     if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
@@ -454,25 +619,31 @@ static void DoDefaultStateGUI(void)
 
             return;
         }
+
+        selected_trans = GetSelectedTransition(ScreenPositionToSpacePosition(GetMousePosition()));
+
+        if (selected_trans)
+        {
+            state = EDIT_TRANSITION;
+            return;
+        }
     }
 }
 
 static void DoGrid(void)
 {
-    int status_bar_h = WINDOW_STATUSBAR_HEIGHT + 2*GuiGetStyle(STATUSBAR, BORDER_WIDTH);
-
-    status_bar_h = 40; // TODO: compute
+    int y_offset = CELL_SIZE * 3;
 
     for (int x = 0; x < editor_viewport.width / CELL_SIZE; x++)
     {
         int pos_x = x * CELL_SIZE;
 
-        DrawLine(pos_x, editor_viewport.y + status_bar_h, pos_x, editor_viewport.height + status_bar_h, GRID_COLOR);
+        DrawLine(pos_x, editor_viewport.y + y_offset, pos_x, editor_viewport.height + y_offset, GRID_COLOR);
     }
 
     for (int y = 0; y < editor_viewport.height / CELL_SIZE; y++)
     {
-        int pos_y = y * CELL_SIZE + status_bar_h + editor_viewport.y;
+        int pos_y = y * CELL_SIZE + y_offset + editor_viewport.y;
 
         DrawLine(0, pos_y, editor_viewport.width, pos_y, GRID_COLOR);
     }
@@ -517,17 +688,23 @@ static void DoTransitionsGUI(void)
         while (trans_desc)
         {
             TransitionUI *render_data = trans_desc->user_data;
-            int angle = ((int)Vector2Angle(render_data->start, render_data->end) + 270) % 360;
+            Color color = render_data->is_selected ? TRANSITION_SELECTED_LINE_COLOR : TRANSITION_LINE_COLOR;
 
-            DrawCircleV(render_data->start, TRANSITION_CIRCLE_RADIUS, RED);
+            DrawCircleV(render_data->start, TRANSITION_CIRCLE_RADIUS, color);
+            DrawCircleV(render_data->end, TRANSITION_CIRCLE_RADIUS, color);
+
+            // draw an arrow in the middle of the transition line
+            int angle = ((int)Vector2Angle(render_data->start, render_data->end) + 270) % 360;
+            Vector2 arrow_pos = GetTransitionArrowPos(trans_desc);
+
             DrawTexturePro(
-                arrow_end_texture.texture,
-                (Rectangle){0, 0, arrow_end_texture.texture.width, arrow_end_texture.texture.height},
-                (Rectangle){render_data->end.x, render_data->end.y, arrow_end_texture.texture.width, arrow_end_texture.texture.height},
-                (Vector2){arrow_end_texture.texture.width / 2, arrow_end_texture.texture.height / 2},
+                (render_data->is_selected ? selected_arrow_texture : arrow_texture).texture,
+                (Rectangle){0, 0, TRANSITION_ARROW_SIZE, TRANSITION_ARROW_SIZE},
+                (Rectangle){arrow_pos.x, arrow_pos.y, TRANSITION_ARROW_SIZE, TRANSITION_ARROW_SIZE},
+                (Vector2){TRANSITION_ARROW_SIZE / 2, TRANSITION_ARROW_SIZE / 2},
                 angle,
                 WHITE);
-            DrawLineV(render_data->start, render_data->end, RED);
+            DrawLineEx(render_data->start, render_data->end, 2.0, color);
 
             trans_desc = trans_desc->next;
         }
@@ -580,9 +757,20 @@ static void RemoveState(NBSM_StateDesc *state_desc)
 
     NBSM_StateDesc *rm_state_desc = NBSM_RemoveStateDesc(&machine_desc, state_desc);
 
+    assert(rm_state_desc == state_desc);
+
     NBSM_Dealloc(rm_state_desc->name);
     NBSM_Dealloc(rm_state_desc->user_data);
     NBSM_Dealloc(rm_state_desc);
+}
+
+static void RemoveValue(NBSM_ValueDesc *val_desc)
+{
+    NBSM_ValueDesc *rm_val_desc = NBSM_RemoveValueDesc(&machine_desc, val_desc);
+
+    assert(rm_val_desc == val_desc);
+
+    NBSM_Dealloc(rm_val_desc->name);
 }
 
 static void RemoveAllStateRelatedTransitions(NBSM_StateDesc *state_desc)
@@ -646,6 +834,42 @@ static void UpdateAllStateRelatedTransitionPositions(NBSM_StateDesc *state_desc,
             }
 
             s = s->next;
+        }
     }
+}
+
+static const char *GetTypeName(NBSM_ValueType type)
+{
+    static const char *names[] = {
+        "INTEGER", "FLOAT", "BOOL"
+    };
+
+    return names[type];
+}
+
+static Vector2 GetTransitionArrowPos(NBSM_TransitionDesc *trans_desc)
+{
+    TransitionUI *render_data = trans_desc->user_data;
+    Vector2 dir = Vector2Normalize(Vector2Subtract(render_data->end, render_data->start));
+    float length = Vector2Distance(render_data->start, render_data->end);
+
+    return Vector2Add(render_data->start, Vector2Scale(dir, length / 2));
+}
+
+static void ResetTransitionSelection(void)
+{
+    NBSM_StateDesc *state_desc = machine_desc.states;
+
+    while (state_desc)
+    {
+        NBSM_TransitionDesc *trans_desc = state_desc->transitions;
+
+        while (trans_desc)
+        {
+            ((TransitionUI *)trans_desc->user_data)->is_selected = false;
+            trans_desc = trans_desc->next;
+        }
+
+        state_desc = state_desc->next;
     }
 }
