@@ -3874,7 +3874,7 @@ RAYGUIDEF void GuiLoadStyle(const char *fileName)
                         {
                             // Load characters from charmap file, 
                             // expected '\n' separated list of integer values
-                            char *charValues = LoadText(charmapFileName);
+                            char *charValues = LoadFileText(charmapFileName);
                             if (charValues != NULL)
                             {
                                 int charsCount = 0;
@@ -3883,12 +3883,12 @@ RAYGUIDEF void GuiLoadStyle(const char *fileName)
                                 int *values = (int *)malloc(charsCount*sizeof(int));
                                 for (int i = 0; i < charsCount; i++) values[i] = atoi(chars[i]);
                                 
-                                font = LoadFontEx(FormatText("%s/%s", GetDirectoryPath(fileName), fontFileName), fontSize, values, charsCount);
+                                font = LoadFontEx(TextFormat("%s/%s", GetDirectoryPath(fileName), fontFileName), fontSize, values, charsCount);
                                 
                                 free(values);
                             }
                         }
-                        else font = LoadFontEx(FormatText("%s/%s", GetDirectoryPath(fileName), fontFileName), fontSize, NULL, 0);
+                        else font = LoadFontEx(TextFormat("%s/%s", GetDirectoryPath(fileName), fontFileName), fontSize, NULL, 0);
 
                         if ((font.texture.id > 0) && (font.charsCount > 0)) GuiSetFont(font);
 

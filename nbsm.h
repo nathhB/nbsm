@@ -47,7 +47,8 @@ typedef enum
 
 typedef enum
 {
-    NBSM_EQUALS,
+    NBSM_EQ,
+    NBSM_NEQ,
     NBSM_LT,
     NBSM_LTE,
     NBSM_GT,
@@ -71,28 +72,17 @@ typedef struct __NBSM_State NBSM_State;
 typedef struct
 {
     HTable *states;
-    HTable *values;
+    HTable *variables;
     NBSM_State *current;
 } NBSM_Machine;
 
-typedef struct __NBSM_ValueDesc NBSM_ValueDesc;
-
-struct __NBSM_ValueDesc
-{
-    char *name;
-    NBSM_ValueType type;
-    void *user_data; // user defined data (used by the editor)
-    NBSM_ValueDesc *next;
-    NBSM_ValueDesc *prev;
-};
-
-typedef bool (*NBSM_ConditionFunc)(NBSM_Value *v1, NBSM_Value *v2);
+typedef bool (*NBSM_ConditionFunc)(NBSM_Value v1, NBSM_Value v2);
 
 typedef struct
 {
     NBSM_ConditionFunc func;
-    NBSM_Value *v1;
-    NBSM_Value v2;
+    NBSM_Value *v1; // points to a variable
+    NBSM_Value v2; // constant value
 } NBSM_Condition;
 
 typedef struct
@@ -111,60 +101,11 @@ struct __NBSM_State
 
 #pragma endregion // State machine
 
-#pragma region "Descriptors"
-
-typedef struct __NBSM_ConditionDesc NBSM_ConditionDesc;
-
-struct __NBSM_ConditionDesc
-{
-    NBSM_ConditionType type;
-    NBSM_ValueDesc *var;
-    NBSM_Value constant;
-    void *user_data; // user defined data (used by the editor)
-    NBSM_ConditionDesc *next;
-    NBSM_ConditionDesc *prev;
-};
-
-typedef struct __NBSM_StateDesc NBSM_StateDesc;
-typedef struct __NBSM_TransitionDesc NBSM_TransitionDesc;
-
-struct __NBSM_TransitionDesc
-{
-    NBSM_StateDesc *src_state;
-    NBSM_StateDesc *target_state;
-    NBSM_ConditionDesc *conditions;
-    unsigned int condition_count;
-    void *user_data; // user defined data (used by the editor)
-    NBSM_TransitionDesc *next;
-    NBSM_TransitionDesc *prev;
-};
-
-struct __NBSM_StateDesc
-{
-    char *name;
-    NBSM_TransitionDesc *transitions;
-    unsigned int transition_count;
-    bool is_initial;
-    void *user_data; // user defined data (used by the editor)
-    NBSM_StateDesc *next;
-    NBSM_StateDesc *prev;
-};
-
-typedef struct
-{
-    NBSM_StateDesc *states;
-    unsigned int state_count;
-    NBSM_ValueDesc *values;
-    unsigned int value_count;
-} NBSM_MachineDesc;
-
-#pragma endregion // Descriptors
-
 #pragma endregion // Types
 
 #pragma region "Public API"
 
-NBSM_Machine *NBSM_Create(NBSM_MachineDesc *desc);
+NBSM_Machine *NBSM_Create(void);
 void NBSM_Destroy(NBSM_Machine *machine);
 void NBSM_Update(NBSM_Machine *machine);
 void NBSM_SetInteger(NBSM_Machine *machine, const char *var_name, int value);
@@ -172,30 +113,6 @@ void NBSM_SetFloat(NBSM_Machine *machine, const char *var_name, float value);
 void NBSM_SetBoolean(NBSM_Machine *machine, const char *var_name, bool value);
 
 #pragma endregion // Public API
-
-#pragma region "Descritor public API"
-
-#ifdef NBSM_DESCRIPTOR_API
-
-void NBSM_InitMachineDesc(NBSM_MachineDesc *machine_desc);
-void NBSM_DeinitMachineDesc(NBSM_MachineDesc *machine_desc);
-NBSM_StateDesc *NBSM_AddStateDesc(NBSM_MachineDesc *machine_desc, char *name, void *user_data);
-NBSM_StateDesc *NBSM_RemoveStateDesc(NBSM_MachineDesc *machine_desc, NBSM_StateDesc *desc);
-NBSM_TransitionDesc *NBSM_AddTransitionDesc(NBSM_StateDesc *from, NBSM_StateDesc *to, void *user_data);
-NBSM_TransitionDesc *NBSM_RemoveTransitionDesc(NBSM_TransitionDesc *desc);
-NBSM_ValueDesc *NBSM_AddValueDesc(NBSM_MachineDesc *machine_desc, char *name, NBSM_ValueType type, void *user_name);
-NBSM_ValueDesc *NBSM_RemoveValueDesc(NBSM_MachineDesc *machine_desc, NBSM_ValueDesc *desc);
-NBSM_ConditionDesc *NBSM_AddCondition(
-        NBSM_TransitionDesc *trans_desc,
-        NBSM_ConditionType type,
-        NBSM_ValueDesc *var_desc,
-        NBSM_Value constant,
-        void *user_data);
-NBSM_ConditionDesc *NBSM_RemoveCondition(NBSM_TransitionDesc *trans_desc, NBSM_ConditionDesc *desc);
-
-#endif // NBSM_DESCRIPTOR_API
-
-#pragma endregion // Descriptor public API
 
 #pragma region "Implementation"
 
@@ -406,54 +323,23 @@ static void *RemoveFromHTable(HTable *htable, const char *key)
 
 #pragma region "State machine"
 
-static void BuildState(NBSM_Machine *machine, NBSM_State *state, NBSM_StateDesc *desc);
-static void BuildTransition(NBSM_Machine *machine, NBSM_Transition *transition, NBSM_TransitionDesc *desc);
-static void BuildCondition(NBSM_Machine *machine, NBSM_Condition *condition, NBSM_ConditionDesc *desc);
-static bool ConditionEquals(NBSM_Value *v1, NBSM_Value *v2);
-static bool ConditionLT(NBSM_Value *v1, NBSM_Value *v2);
-static bool ConditionLTE(NBSM_Value *v1, NBSM_Value *v2);
-static bool ConditionGT(NBSM_Value *v1, NBSM_Value *v2);
-static bool ConditionGTE(NBSM_Value *v1, NBSM_Value *v2);
 static void DestroyMachineValue(void *v);
 static void DestroyMachineState(void *v);
 
-NBSM_Machine *NBSM_Create(NBSM_MachineDesc *desc)
+NBSM_Machine *NBSM_Create(void)
 {
     NBSM_Machine *machine = NBSM_Alloc(sizeof(NBSM_Machine));
 
-    machine->states = CreateHTableWithCapacity(desc->state_count);
-    machine->values = CreateHTable();
+    machine->states = CreateHTable();
+    machine->variables = CreateHTable();
     machine->current = NULL;
-
-    for (unsigned int i = 0; i < desc->value_count; i++)
-    {
-        NBSM_Value *value = NBSM_Alloc(sizeof(NBSM_Value));
-
-        memset(value, 0, sizeof(NBSM_Value));
-
-        AddToHTable(machine->values, desc->values[i].name, value);
-    }
-
-    for (unsigned int i = 0; i < desc->state_count; i++)
-    {
-        NBSM_StateDesc *state_desc = &desc->states[i];
-        NBSM_State *state = NBSM_Alloc(sizeof(NBSM_State));
-        
-        BuildState(machine, state, state_desc);
-        AddToHTable(machine->states, state->name, state);
-
-        if (state_desc->is_initial)
-            machine->current = state;
-    }
-
-    assert(machine->current);
 
     return machine;
 }
 
 void NBSM_Destroy(NBSM_Machine *machine)
 {
-    DestroyHTable(machine->values, true, DestroyMachineValue, false);
+    DestroyHTable(machine->variables, true, DestroyMachineValue, false);
     DestroyHTable(machine->states, true, DestroyMachineState, false);
 }
 
@@ -471,7 +357,7 @@ void NBSM_Update(NBSM_Machine *machine)
         {
             NBSM_Condition *c = &t->conditions[j];
 
-            if (!c->func(c->v1, &c->v2))
+            if (!c->func(*c->v1, c->v2))
             {
                 res = false;
 
@@ -490,7 +376,7 @@ void NBSM_Update(NBSM_Machine *machine)
 
 void NBSM_SetInteger(NBSM_Machine *machine, const char *var_name, int value)
 {
-    NBSM_Value *v = GetInHTable(machine->values, var_name);
+    NBSM_Value *v = GetInHTable(machine->variables, var_name);
 
     assert(v->type == NBSM_INTEGER);
 
@@ -499,7 +385,7 @@ void NBSM_SetInteger(NBSM_Machine *machine, const char *var_name, int value)
 
 void NBSM_SetFloat(NBSM_Machine *machine, const char *var_name, float value)
 {
-    NBSM_Value *v = GetInHTable(machine->values, var_name);
+    NBSM_Value *v = GetInHTable(machine->variables, var_name);
 
     assert(v->type == NBSM_FLOAT);
 
@@ -508,111 +394,11 @@ void NBSM_SetFloat(NBSM_Machine *machine, const char *var_name, float value)
 
 void NBSM_SetBoolean(NBSM_Machine *machine, const char *var_name, bool value)
 {
-    NBSM_Value *v = GetInHTable(machine->values, var_name);
+    NBSM_Value *v = GetInHTable(machine->variables, var_name);
 
     assert(v->type == NBSM_BOOLEAN);
 
     v->value.b = value;
-}
-
-static void BuildState(NBSM_Machine *machine, NBSM_State *state, NBSM_StateDesc *desc)
-{
-    state->name = desc->name;
-    state->transition_count = desc->transition_count;
-
-    for (unsigned int i = 0; i < state->transition_count; i++)
-        BuildTransition(machine, &state->transitions[i], &desc->transitions[i]);
-}
-
-static void BuildTransition(NBSM_Machine *machine, NBSM_Transition *transition, NBSM_TransitionDesc *desc)
-{
-    transition->condition_count = desc->condition_count;
-
-    for (unsigned int i = 0; i < transition->condition_count; i++)
-        BuildCondition(machine, &transition->conditions[i], &desc->conditions[i]);
-}
-
-static void BuildCondition(NBSM_Machine *machine, NBSM_Condition *condition, NBSM_ConditionDesc *desc)
-{
-    static NBSM_ConditionFunc condition_funcs[] = {
-        ConditionEquals,
-        ConditionLT,
-        ConditionLTE,
-        ConditionGT,
-        ConditionGTE
-    };
-
-    assert(condition->v1->type == condition->v2.type);
-
-    condition->func = condition_funcs[desc->type];
-    condition->v1 = GetInHTable(machine->values, desc->var->name);
-    condition->v2 = desc->constant;
-}
-
-static bool ConditionEquals(NBSM_Value *v1, NBSM_Value *v2)
-{
-    if (v1->type == NBSM_INTEGER && v2->type == NBSM_INTEGER)
-        return v1->value.i == v2->value.i;
-
-    if (v1->type == NBSM_FLOAT && v2->type == NBSM_FLOAT)
-        return v1->value.f == v2->value.f;
-
-    if (v1->type == NBSM_BOOLEAN && v2->type == NBSM_BOOLEAN)
-        return v1->value.b == v2->value.b;
-
-    return false;
-}
-
-static bool ConditionLT(NBSM_Value *v1, NBSM_Value *v2)
-{
-    assert((v1->type == NBSM_INTEGER || v1->type == NBSM_FLOAT) && v2->type == NBSM_INTEGER || v2->type == NBSM_FLOAT);
-
-    if (v1->type == NBSM_INTEGER && v2->type == NBSM_INTEGER)
-        return v1->value.i < v2->value.i;
-
-    if (v1->type == NBSM_FLOAT && v2->type == NBSM_FLOAT)
-        return v1->value.f < v2->value.f;
-
-    return false;
-}
-
-static bool ConditionLTE(NBSM_Value *v1, NBSM_Value *v2)
-{
-    assert((v1->type == NBSM_INTEGER || v1->type == NBSM_FLOAT) && v2->type == NBSM_INTEGER || v2->type == NBSM_FLOAT);
-
-    if (v1->type == NBSM_INTEGER && v2->type == NBSM_INTEGER)
-        return v1->value.i <= v2->value.i;
-
-    if (v1->type == NBSM_FLOAT && v2->type == NBSM_FLOAT)
-        return v1->value.f <= v2->value.f;
-
-    return false;
-}
-
-static bool ConditionGT(NBSM_Value *v1, NBSM_Value *v2)
-{
-    assert((v1->type == NBSM_INTEGER || v1->type == NBSM_FLOAT) && v2->type == NBSM_INTEGER || v2->type == NBSM_FLOAT);
-
-    if (v1->type == NBSM_INTEGER && v2->type == NBSM_INTEGER)
-        return v1->value.i > v2->value.i;
-
-    if (v1->type == NBSM_FLOAT && v2->type == NBSM_FLOAT)
-        return v1->value.f > v2->value.f;
-
-    return false;
-}
-
-static bool ConditionGTE(NBSM_Value *v1, NBSM_Value *v2)
-{
-    assert((v1->type == NBSM_INTEGER || v1->type == NBSM_FLOAT) && v2->type == NBSM_INTEGER || v2->type == NBSM_FLOAT);
-
-    if (v1->type == NBSM_INTEGER && v2->type == NBSM_INTEGER)
-        return v1->value.i >= v2->value.i;
-
-    if (v1->type == NBSM_FLOAT && v2->type == NBSM_FLOAT)
-        return v1->value.f >= v2->value.f;
-
-    return false;
 }
 
 static void DestroyMachineValue(void *v)
@@ -626,270 +412,6 @@ static void DestroyMachineState(void *v)
 }
 
 #pragma endregion // State machine
-
-#pragma region "Descritors"
-
-#ifdef NBSM_DESCRIPTOR_API
-
-void NBSM_InitMachineDesc(NBSM_MachineDesc *machine_desc)
-{
-    machine_desc->states = NULL;
-    machine_desc->state_count = 0;
-    machine_desc->values = NULL;
-    machine_desc->value_count = 0;
-}
-
-void NBSM_DeinitMachineDesc(NBSM_MachineDesc *machine_desc)
-{
-    // TODO
-}
-
-NBSM_StateDesc *NBSM_AddStateDesc(NBSM_MachineDesc *machine_desc, char *name, void *user_data)
-{
-    NBSM_StateDesc *desc = NBSM_Alloc(sizeof(NBSM_StateDesc));
-
-    desc->name = name;
-    desc->is_initial = false;
-    desc->user_data = user_data;
-    desc->transitions = NULL;
-    desc->transition_count = 0;
-
-    if (!machine_desc->states)
-    {
-        desc->prev = NULL;
-        desc->next = NULL;
-
-        machine_desc->states = desc;
-    }
-    else
-    {
-        NBSM_StateDesc *s = machine_desc->states;
-
-        while (s->next)
-            s = s->next;
-
-        assert(!s->next);
-
-        desc->prev = s;
-        desc->next = NULL;
-
-        s->next = desc;
-    }
-
-    machine_desc->state_count++;
-
-    return desc;
-}
-
-NBSM_StateDesc *NBSM_RemoveStateDesc(NBSM_MachineDesc *machine_desc, NBSM_StateDesc *desc)
-{
-    if (!desc->prev)
-    {
-        // first item of the list
-        machine_desc->states = desc->next;
-
-        if (desc->next)
-            desc->next->prev = NULL;
-    }
-    else
-    {
-        desc->prev->next = desc->next;
-        
-        if (desc->next)
-            desc->next->prev = desc->prev;
-    }
-
-    machine_desc->state_count--;
-
-    return desc;
-}
-
-NBSM_TransitionDesc *NBSM_AddTransitionDesc(NBSM_StateDesc *from, NBSM_StateDesc *to, void *user_data)
-{
-    NBSM_TransitionDesc *desc = NBSM_Alloc(sizeof(NBSM_TransitionDesc));
-
-    desc->src_state = from;
-    desc->target_state = to;
-    desc->user_data = user_data;
-    desc->condition_count = 0;
-
-    if (!from->transitions)
-    {
-        desc->prev = NULL;
-        desc->next = NULL;
-
-        from->transitions = desc;
-    }
-    else
-    {
-        NBSM_TransitionDesc *t = from->transitions;
-
-        while (t->next)
-            t = t->next;
-
-        assert(!t->next);
-
-        desc->prev = t;
-        desc->next = NULL;
-
-        t->next = desc;
-    }
-
-    from->transition_count++;
-
-    return desc;
-}
-
-NBSM_TransitionDesc *NBSM_RemoveTransitionDesc(NBSM_TransitionDesc *desc)
-{
-    NBSM_StateDesc *from = desc->src_state;
-
-    if (!desc->prev)
-    {
-        // first item of the list
-        from->transitions = desc->next;
-
-        if (desc->next)
-            desc->next->prev = NULL;
-    }
-    else
-    {
-        desc->prev->next = desc->next;
-        
-        if (desc->next)
-            desc->next->prev = desc->prev;
-    }
-
-    from->transition_count--;
-
-    return desc;
-}
-
-NBSM_ValueDesc *NBSM_AddValueDesc(NBSM_MachineDesc *machine_desc, char *name, NBSM_ValueType type, void *user_data)
-{
-    NBSM_ValueDesc *desc = NBSM_Alloc(sizeof(NBSM_ValueDesc));
-
-    desc->name = name;
-    desc->type = type;
-    desc->user_data = user_data;
-
-    if (!machine_desc->values)
-    {
-        desc->prev = NULL;
-        desc->next = NULL;
-
-        machine_desc->values = desc;
-    }
-    else
-    {
-        NBSM_ValueDesc *v = machine_desc->values;
-
-        while (v->next)
-            v = v->next;
-
-        assert(!v->next);
-
-        desc->prev = v;
-        desc->next = NULL;
-
-        v->next = desc;
-    }
-
-    machine_desc->value_count++;
-
-    return desc;
-}
-
-NBSM_ValueDesc *NBSM_RemoveValueDesc(NBSM_MachineDesc *machine_desc, NBSM_ValueDesc *desc)
-{
-    if (!desc->prev)
-    {
-        // first item of the list
-        machine_desc->values = desc->next;
-
-        if (desc->next)
-            desc->next->prev = NULL;
-    }
-    else
-    {
-        desc->prev->next = desc->next;
-        
-        if (desc->next)
-            desc->next->prev = desc->prev;
-    }
-
-    machine_desc->value_count--;
-
-    return desc;
-}
-
-NBSM_ConditionDesc *NBSM_AddCondition(
-        NBSM_TransitionDesc *trans_desc,
-        NBSM_ConditionType type,
-        NBSM_ValueDesc *var_desc,
-        NBSM_Value constant,
-        void *user_data)
-{
-    NBSM_ConditionDesc *desc = NBSM_Alloc(sizeof(NBSM_ConditionDesc));
-
-    desc->type = type;
-    desc->var = var_desc;
-    desc->constant = constant;
-    desc->user_data = user_data;
-
-    if (!trans_desc->conditions)
-    {
-        desc->prev = NULL;
-        desc->next = NULL;
-
-        trans_desc->conditions = desc;
-    }
-    else
-    {
-        NBSM_ConditionDesc *c = trans_desc->conditions;
-
-        while (c->next)
-            c = c->next;
-
-        assert(!c->next);
-
-        desc->prev = c;
-        desc->next = NULL;
-
-        c->next = desc;
-    }
-
-    trans_desc->condition_count++;
-
-    return desc;
-}
-
-NBSM_ConditionDesc *NBSM_RemoveCondition(NBSM_TransitionDesc *trans_desc, NBSM_ConditionDesc *desc)
-{
-    if (!desc->prev)
-    {
-        // first item of the list
-        trans_desc->conditions = desc->next;
-
-        if (desc->next)
-            desc->next->prev = NULL;
-    }
-    else
-    {
-        desc->prev->next = desc->next;
-        
-        if (desc->next)
-            desc->next->prev = desc->prev;
-    }
-
-    trans_desc->condition_count--;
-
-    return desc;
-}
-
-#endif // NBSM_DESCRIPTOR_API
-
-#pragma endregion // Descriptors
 
 #endif // NBSM_IMPL
 
