@@ -180,23 +180,14 @@ int main(int argc, char **argv)
 
     char *file_content = ReadFileContent(file_path);
 
-    if (file_content)
+    if (Load(&machine, file_content) < 0)
     {
-        if (Load(&machine, file_content) < 0)
-        {
-            printf("Failed to load file: %s\n", file_path);
-
-            return 1;
-        }
-
-        free(file_content);
-    }
-    else
-    {
-        printf("Failed to read file: %s\n", file_path);
+        printf("Failed to load file: %s\n", file_path);
 
         return 1;
     }
+
+    free(file_content);
 #endif // EMSCRIPTEN
 
 #ifdef EMSCRIPTEN

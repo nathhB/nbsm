@@ -37,7 +37,7 @@ static const char *json_cond_types[] = {
 
 int Load(EditorStateMachine *machine, char *data)
 {
-    json_object *root = json_tokener_parse(data);
+    json_object *root = json_tokener_parse(data ? data : "{}");
 
     if (!root)
         return -1;
@@ -133,6 +133,10 @@ char *ReadFileContent(const char *path)
 static void LoadVariables(EditorStateMachine *machine, json_object *obj)
 {
     json_object *var_arr_obj = json_object_object_get(obj, "variables");
+
+    if (!var_arr_obj)
+        return;
+
     unsigned int var_count = json_object_array_length(var_arr_obj);
 
     for (unsigned int i = 0; i < var_count; i++)
@@ -153,6 +157,10 @@ static void LoadVariables(EditorStateMachine *machine, json_object *obj)
 static void LoadStates(EditorStateMachine *machine, json_object *obj)
 {
     json_object *state_arr_obj = json_object_object_get(obj, "states");
+
+    if (!state_arr_obj)
+        return;
+
     unsigned int state_count = json_object_array_length(state_arr_obj);
 
     for (unsigned int i = 0; i < state_count; i++)
@@ -180,6 +188,10 @@ static void LoadStates(EditorStateMachine *machine, json_object *obj)
 static void LoadTransitions(EditorStateMachine *machine, json_object *obj)
 {
     json_object *trans_arr_obj = json_object_object_get(obj, "transitions");
+
+    if (!trans_arr_obj)
+        return;
+
     unsigned int transition_count = json_object_array_length(trans_arr_obj);
 
     for (unsigned int i = 0; i < transition_count; i++)
@@ -212,6 +224,10 @@ static void LoadTransitions(EditorStateMachine *machine, json_object *obj)
 static void LoadConditions(EditorStateMachine *machine, EditorTransition *trans, json_object *trans_obj)
 {
     json_object *cond_arr_obj = json_object_object_get(trans_obj, "conditions");
+
+    if (!cond_arr_obj)
+        return;
+
     unsigned int condition_count = json_object_array_length(cond_arr_obj);
 
     for (unsigned int i = 0; i < condition_count; i++)
