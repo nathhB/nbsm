@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdbool.h>
+#include <assert.h>
 
 #ifdef EMSCRIPTEN
 
@@ -28,9 +29,9 @@ int js_get_win_height(void);
 #endif // EMSCRIPTEN
 
 #define RAYGUI_IMPLEMENTATION
+#define NBSM_IMPL
 
 #include "raygui.h"
-
 #include "editor.h"
 #include "save_load.h"
 
