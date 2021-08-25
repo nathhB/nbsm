@@ -211,11 +211,23 @@ void NBSM_Destroy(NBSM_Machine *machine);
 // Update the state machine (check if any transition needs to be executed based on conditions)
 void NBSM_Update(NBSM_Machine *machine);
 
+// Change the current state of the state machine, ignoring transitions and conditions
+void NBSM_ChangeState(NBSM_Machine *machine, const char *name);
+
 // Add a state to the state machine
 void NBSM_AddState(NBSM_Machine *machine, const char *name, bool is_initial);
 
 // Attach some user defined data to a given state
 void NBSM_AttachDataToState(NBSM_Machine *machine, const char *name, void *user_data);
+
+// Add an "OnEnter" hook on the given state
+void NBSM_OnStateEnter(NBSM_Machine *machine, const char *name, NBSM_StateHookFunc hook_func);
+
+// Add an "OnExit" hook on the given state
+void NBSM_OnStateExit(NBSM_Machine *machine, const char *name, NBSM_StateHookFunc hook_func);
+
+// Add an "OnUpdate" hook on the given state
+void NBSM_OnStateUpdate(NBSM_Machine *machine, const char *name, NBSM_StateHookFunc hook_func);
 
 // Add a new transition between two states
 NBSM_Transition *NBSM_AddTransition(NBSM_Machine *machine, const char *from, const char *to);
@@ -482,6 +494,7 @@ static void *RemoveFromHTable(HTable *htable, const char *key)
 
 #pragma region "Public API"
 
+static void ChangeState(NBSM_Machine *machine, NBSM_State *state);
 static NBSM_ConditionFunc GetConditionFunction(NBSM_ConditionType type);
 static bool ConditionEQ(NBSM_Value *v1, NBSM_Value *v2);
 static bool ConditionNEQ(NBSM_Value *v1, NBSM_Value *v2);
@@ -582,20 +595,19 @@ void NBSM_Update(NBSM_Machine *machine)
     }
 
     if (t)
-    {
-        NBSM_State *prev_state = machine->current;
-
-        machine->current = t->target_state;
-
-        if (prev_state->on_exit)
-            prev_state->on_exit(machine);
-
-        if (machine->current->on_enter)
-            machine->current->on_enter(machine);
-    }
+        ChangeState(machine, t->target_state);
 
     if (machine->current->on_update)
         machine->current->on_update(machine);
+}
+
+void NBSM_ChangeState(NBSM_Machine *machine, const char *name)
+{
+    NBSM_State *s = GetInHTable(machine->states, name);
+
+    NBSM_Assert(s);
+
+    ChangeState(machine, s);
 }
 
 void NBSM_AddState(NBSM_Machine *machine, const char *name, bool is_initial)
@@ -628,6 +640,33 @@ void NBSM_AttachDataToState(NBSM_Machine *machine, const char *name, void *user_
     NBSM_Assert(s);
 
     s->user_data = user_data;
+}
+
+void NBSM_OnStateEnter(NBSM_Machine *machine, const char *name, NBSM_StateHookFunc hook_func)
+{
+    NBSM_State *s = GetInHTable(machine->states, name);
+
+    NBSM_Assert(s);
+
+    s->on_enter = hook_func;
+}
+
+void NBSM_OnStateExit(NBSM_Machine *machine, const char *name, NBSM_StateHookFunc hook_func)
+{
+    NBSM_State *s = GetInHTable(machine->states, name);
+
+    NBSM_Assert(s);
+
+    s->on_exit = hook_func;
+}
+
+void NBSM_OnStateUpdate(NBSM_Machine *machine, const char *name, NBSM_StateHookFunc hook_func)
+{
+    NBSM_State *s = GetInHTable(machine->states, name);
+
+    NBSM_Assert(s);
+
+    s->on_update = hook_func;
 }
 
 NBSM_Transition *NBSM_AddTransition(NBSM_Machine *machine, const char *from, const char *to)
@@ -782,6 +821,19 @@ NBSM_MachineBuilder *NBSM_CreateBuilderFromJSON(const char *json)
 #endif // NBSM_JSON_BUILDER
 
 #pragma endregion // Public API
+
+static void ChangeState(NBSM_Machine *machine, NBSM_State *state)
+{
+    NBSM_State *prev_state = machine->current;
+
+    machine->current = state;
+
+    if (prev_state->on_exit)
+        prev_state->on_exit(machine);
+
+    if (machine->current->on_enter)
+        machine->current->on_enter(machine);
+}
 
 static NBSM_ConditionFunc GetConditionFunction(NBSM_ConditionType type)
 {
