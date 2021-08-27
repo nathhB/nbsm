@@ -167,10 +167,21 @@ typedef struct
 
 typedef struct
 {
+    NBSM_ConditionOperandType type;
+
+    union
+    {
+        NBSM_Value constant;
+        const char *var_name;
+    } data;
+} NBSM_ConditionOperandBlueprint;
+
+typedef struct
+{
     unsigned int transition_idx;
     NBSM_ConditionType type;
     const char *var_name;
-    NBSM_ConditionOperand right_op;
+    NBSM_ConditionOperandBlueprint right_op;
 } NBSM_ConditionBlueprint;
 
 typedef struct
@@ -502,8 +513,21 @@ static bool ConditionLT(NBSM_Value *v1, NBSM_Value *v2);
 static bool ConditionLTE(NBSM_Value *v1, NBSM_Value *v2);
 static bool ConditionGT(NBSM_Value *v1, NBSM_Value *v2);
 static bool ConditionGTE(NBSM_Value *v1, NBSM_Value *v2);
-static void DestroyMachineValue(void *v);
-static void DestroyMachineState(void *v);
+static void DestroyMachineValue(void *ptr);
+static void DestroyMachineState(void *ptr);
+static void DestroyMachineTransition(NBSM_Transition *transition);
+
+#ifdef NBSM_JSON_BUILDER
+
+static void LoadVariablesFromJSON(NBSM_MachineBuilder *builder, struct json_array_s *var_arr);
+static void LoadStatesFromJSON(NBSM_MachineBuilder *builder, struct json_array_s *state_arr);
+static void LoadTransitionsFromJSON(NBSM_MachineBuilder *builder, struct json_array_s *trans_arr);
+static void LoadConditionsFromJSON(NBSM_TransitionBlueprint *transition, unsigned int trans_idx, struct json_array_s *cond_arr);
+static NBSM_ConditionOperandBlueprint LoadConditionOperandFromJSON(struct json_object_s *op_obj);
+static NBSM_ValueType GetVariableTypeFromJSON(const char *type_str);
+static NBSM_ConditionType GetConditionTypeFromJSON(const char *type_str);
+
+#endif // NBSM_JSON_BUILDER
 
 NBSM_Machine *NBSM_Create(void)
 {
@@ -543,8 +567,14 @@ NBSM_Machine *NBSM_Build(NBSM_MachineBuilder *builder)
         for (unsigned int j = 0; j < tb->condition_count; j++)
         {
             NBSM_ConditionBlueprint *cb = &tb->conditions[j];
+            NBSM_ConditionOperand right_op = { .type = cb->right_op.type };
 
-            NBSM_AddCondition(machine, t, cb->var_name, cb->type, cb->right_op);
+            if (cb->right_op.type == NBSM_OPERAND_CONST)
+                right_op.data.constant = cb->right_op.data.constant;
+            else if (cb->right_op.type == NBSM_OPERAND_VAR)
+                right_op.data.var = NBSM_GetVariable(machine, cb->right_op.data.var_name);
+
+            NBSM_AddCondition(machine, t, cb->var_name, cb->type, right_op);
         }
     }
 
@@ -555,6 +585,8 @@ void NBSM_Destroy(NBSM_Machine *machine)
 {
     DestroyHTable(machine->variables, true, DestroyMachineValue, false);
     DestroyHTable(machine->states, true, DestroyMachineState, false);
+
+    NBSM_Dealloc(machine);
 }
 
 void NBSM_Update(NBSM_Machine *machine)
@@ -813,12 +845,77 @@ NBSM_Value *NBSM_GetVariable(NBSM_Machine *machine, const char *name)
 NBSM_MachineBuilder *NBSM_CreateBuilderFromJSON(const char *json)
 {
     NBSM_MachineBuilder *builder = NBSM_Alloc(sizeof(NBSM_MachineBuilder));
+
+    builder->state_count = 0;
+    builder->states = NULL;
+
+    builder->variable_count = 0;
+    builder->variables = NULL;
+
+    builder->transition_count = 0;
+    builder->transitions = NULL;
+
     struct json_value_s *root = json_parse(json, strlen(json));
+
+    NBSM_Assert(root->type == json_type_object);
+
+    struct json_object_s *object = (struct json_object_s*)root->payload;
+    struct json_object_element_s *node = object->start;
+
+    while (node)
+    {
+        if (strcmp(node->name->string, "variables") == 0)
+        {
+            NBSM_Assert(node->value->type == json_type_array);
+
+            LoadVariablesFromJSON(builder, node->value->payload);
+        }
+        else if (strcmp(node->name->string, "states") == 0)
+        {
+            NBSM_Assert(node->value->type == json_type_array);
+
+            LoadStatesFromJSON(builder, node->value->payload);
+        }
+        else if (strcmp(node->name->string, "transitions") == 0)
+        {
+            NBSM_Assert(node->value->type == json_type_array);
+
+            LoadTransitionsFromJSON(builder, node->value->payload);
+        }
+
+        node = node->next;
+    }
+
+    NBSM_Dealloc(root);
 
     return builder;
 }
 
 #endif // NBSM_JSON_BUILDER
+
+void NBSM_DestroyBuilder(NBSM_MachineBuilder *builder)
+{
+    if (builder->states)
+        NBSM_Dealloc(builder->states);
+
+    if (builder->variables)
+        NBSM_Dealloc(builder->variables);
+    
+    if (builder->transitions)
+    {
+        for (unsigned int i = 0; i < builder->transition_count; i++)
+        {
+            NBSM_ConditionBlueprint *conditions = builder->transitions[i].conditions;
+
+            if (conditions)
+                NBSM_Dealloc(conditions);
+        }
+
+        NBSM_Dealloc(builder->transitions);
+    }
+
+    NBSM_Dealloc(builder);
+}
 
 #pragma endregion // Public API
 
@@ -930,15 +1027,344 @@ static bool ConditionGTE(NBSM_Value *v1, NBSM_Value *v2)
     return false;
 }
 
-static void DestroyMachineValue(void *v)
+static void DestroyMachineValue(void *ptr)
 {
-    NBSM_Dealloc(v);
+    NBSM_Dealloc(ptr);
 }
 
-static void DestroyMachineState(void *v)
+static void DestroyMachineState(void *ptr)
 {
-    NBSM_Dealloc(v);
+    NBSM_State *state = ptr;
+    NBSM_Transition *t = state->transitions;
+
+    while (t)
+    {
+        NBSM_Transition *next = t->next;
+
+        DestroyMachineTransition(t);
+
+        t = next;
+    }
+
+    NBSM_Dealloc(ptr);
 }
+
+static void DestroyMachineTransition(NBSM_Transition *transition)
+{
+    NBSM_Condition *c = transition->conditions;
+
+    while (c)
+    {
+        NBSM_Condition *next = c->next;
+
+        NBSM_Dealloc(c);
+
+        c = next;
+    }
+
+    NBSM_Dealloc(transition);
+}
+
+#ifdef NBSM_JSON_BUILDER
+
+static void LoadVariablesFromJSON(NBSM_MachineBuilder *builder, struct json_array_s *var_arr)
+{
+    builder->variable_count = var_arr->length;
+    builder->variables = NBSM_Alloc(sizeof(NBSM_VariableBlueprint) * builder->variable_count);
+
+    struct json_array_element_s *arr_node = var_arr->start;
+
+    int i = 0;
+
+    while (arr_node)
+    {
+        NBSM_Assert(arr_node->value->type == json_type_object);
+
+        struct json_object_s *var_obj = arr_node->value->payload;
+        struct json_object_element_s *var_node = var_obj->start;
+        NBSM_VariableBlueprint *var = &builder->variables[i];
+
+        while (var_node)
+        {
+            if (strcmp(var_node->name->string, "name") == 0)
+            {
+                NBSM_Assert(var_node->value->type == json_type_string);
+
+                var->name = ((struct json_string_s *)var_node->value->payload)->string;
+            }
+            else if (strcmp(var_node->name->string, "type") == 0)
+            {
+                NBSM_Assert(var_node->value->type == json_type_string);
+
+                var->type = GetVariableTypeFromJSON(((struct json_string_s *)var_node->value->payload)->string);
+
+                NBSM_Assert(var->type >= 0);
+            }
+
+            var_node = var_node->next;
+        }
+
+        arr_node = arr_node->next;
+        i++;
+    }
+}
+
+static void LoadStatesFromJSON(NBSM_MachineBuilder *builder, struct json_array_s *state_arr)
+{
+    builder->state_count = state_arr->length;
+    builder->states = NBSM_Alloc(sizeof(NBSM_StateBlueprint) * builder->state_count);
+
+    struct json_array_element_s *arr_node = state_arr->start;
+
+    int i = 0;
+
+    while (arr_node)
+    {
+        NBSM_Assert(arr_node->value->type == json_type_object);
+
+        struct json_object_s *state_obj = arr_node->value->payload;
+        struct json_object_element_s *state_node = state_obj->start;
+        NBSM_StateBlueprint *state = &builder->states[i];
+
+        while (state_node)
+        {
+            if (strcmp(state_node->name->string, "name") == 0)
+            {
+                NBSM_Assert(state_node->value->type == json_type_string);
+
+                state->name = ((struct json_string_s *)state_node->value->payload)->string;
+            }
+            else if (strcmp(state_node->name->string, "is_initial") == 0)
+            {
+                NBSM_Assert(state_node->value->type == json_type_true || state_node->value->type == json_type_false);
+
+                state->is_initial = state_node->value->type == json_type_true;
+            }
+
+            state_node = state_node->next;
+        }
+
+        arr_node = arr_node->next;
+        i++;
+    }
+}
+
+static void LoadTransitionsFromJSON(NBSM_MachineBuilder *builder, struct json_array_s *trans_arr)
+{
+    builder->transition_count = trans_arr->length;
+    builder->transitions = NBSM_Alloc(sizeof(NBSM_TransitionBlueprint) * builder->transition_count);
+
+    struct json_array_element_s *arr_node = trans_arr->start;
+
+    int i = 0;
+
+    while (arr_node)
+    {
+        NBSM_Assert(arr_node->value->type == json_type_object);
+
+        struct json_object_s *trans_obj = arr_node->value->payload;
+        struct json_object_element_s *trans_node = trans_obj->start;
+        NBSM_TransitionBlueprint *transition = &builder->transitions[i];
+
+        transition->condition_count = 0;
+        transition->conditions = NULL;
+
+        while (trans_node)
+        {
+            if (strcmp(trans_node->name->string, "source") == 0)
+            {
+                NBSM_Assert(trans_node->value->type == json_type_string);
+
+                transition->from = ((struct json_string_s *)trans_node->value->payload)->string;
+            }
+            else if (strcmp(trans_node->name->string, "target") == 0)
+            {
+                NBSM_Assert(trans_node->value->type == json_type_string);
+
+                transition->to = ((struct json_string_s *)trans_node->value->payload)->string;
+            }
+            else if (strcmp(trans_node->name->string, "conditions") == 0)
+            {
+                NBSM_Assert(trans_node->value->type == json_type_array);
+
+                LoadConditionsFromJSON(transition, i, trans_node->value->payload);
+            }
+
+            trans_node = trans_node->next;
+        }
+
+        arr_node = arr_node->next;
+        i++;
+    }
+}
+
+static void LoadConditionsFromJSON(NBSM_TransitionBlueprint *transition, unsigned int trans_idx, struct json_array_s *cond_arr)
+{
+    transition->condition_count = cond_arr->length;
+    transition->conditions = NBSM_Alloc(sizeof(NBSM_ConditionBlueprint) * transition->condition_count);
+
+    struct json_array_element_s *arr_node = cond_arr->start;
+    int i = 0;
+
+    while (arr_node)
+    {
+        NBSM_Assert(arr_node->value->type == json_type_object);
+
+        struct json_object_s *cond_obj = arr_node->value->payload;
+        struct json_object_element_s *cond_node = cond_obj->start;
+        NBSM_ConditionBlueprint *cond = &transition->conditions[i];
+
+        cond->transition_idx = trans_idx;
+
+        while (cond_node)
+        {
+            if (strcmp(cond_node->name->string, "type") == 0)
+            {
+                NBSM_Assert(cond_node->value->type == json_type_string);
+
+                cond->type = GetConditionTypeFromJSON(((struct json_string_s *)cond_node->value->payload)->string);
+
+                NBSM_Assert(cond->type >= 0);
+            }
+            else if (strcmp(cond_node->name->string, "left_op") == 0)
+            {
+                NBSM_Assert(cond_node->value->type == json_type_string);
+
+                cond->var_name = ((struct json_string_s *)cond_node->value->payload)->string;
+            }
+            else if (strcmp(cond_node->name->string, "right_op") == 0)
+            {
+                NBSM_Assert(cond_node->value->type == json_type_object);
+
+                cond->right_op = LoadConditionOperandFromJSON(cond_node->value->payload);
+            }
+
+            cond_node = cond_node->next;
+        }
+
+        arr_node = arr_node->next;
+        i++;
+    }
+}
+
+static NBSM_ConditionOperandBlueprint LoadConditionOperandFromJSON(struct json_object_s *op_obj)
+{
+    struct json_object_element_s *op_node = op_obj->start;
+    NBSM_ConditionOperandBlueprint op = { .type = -1 };
+
+    while (op_node)
+    {
+        if (strcmp(op_node->name->string, "type") == 0)
+        {
+            NBSM_Assert(op_node->value->type == json_type_string);
+
+            const char *op_type_str = ((struct json_string_s *)op_node->value->payload)->string;
+
+            if (strcmp(op_type_str, "const") == 0)
+                op.type = NBSM_OPERAND_CONST;
+            else if (strcmp(op_type_str, "var") == 0)
+                op.type = NBSM_OPERAND_VAR;
+
+            NBSM_Assert(op.type >= 0);
+        }
+        else if (strcmp(op_node->name->string, "const") == 0)
+        {
+            NBSM_Assert(op_node->value->type == json_type_object);
+            NBSM_Assert(op.type == NBSM_OPERAND_CONST);
+
+            struct json_object_element_s *const_node = ((struct json_object_s *)op_node->value->payload)->start;
+
+            while (const_node)
+            {
+                if (strcmp(const_node->name->string, "type") == 0)
+                {
+                    NBSM_Assert(const_node->value->type == json_type_string);
+
+                    op.data.constant.type =
+                        GetVariableTypeFromJSON(((struct json_string_s *)const_node->value->payload)->string);
+                }
+                else if (strcmp(const_node->name->string, "value") == 0)
+                {
+                    if (const_node->value->type == json_type_number)
+                    {
+                        NBSM_Assert(op.data.constant.type == NBSM_INTEGER || op.data.constant.type == NBSM_FLOAT);
+
+                        const char *val_str = ((struct json_number_s *)const_node->value->payload)->number;
+
+                        if (op.data.constant.type == NBSM_INTEGER)
+                            op.data.constant.value.i = atoi(val_str);
+                        else if (op.data.constant.type == NBSM_FLOAT)
+                            op.data.constant.value.f = atof(val_str);
+                    }
+                    else if (const_node->value->type == json_type_true)
+                    {
+                        NBSM_Assert(op.data.constant.type == NBSM_BOOLEAN);
+
+                        op.data.constant.value.b = true;
+                    }
+                    else if (const_node->value->type == json_type_false)
+                    {
+                        NBSM_Assert(op.data.constant.type == NBSM_BOOLEAN);
+
+                        op.data.constant.value.b = false;
+                    }
+                }
+
+                const_node = const_node->next;
+            }
+        }
+        else if (strcmp(op_node->name->string, "var") == 0)
+        {
+            NBSM_Assert(op_node->value->type == json_type_string);
+            NBSM_Assert(op.type == NBSM_OPERAND_VAR);
+
+            op.data.var_name = ((struct json_string_s *)op_node->value->payload)->string;
+        }
+
+        op_node = op_node->next;
+    }
+
+    return op;
+}
+
+static NBSM_ValueType GetVariableTypeFromJSON(const char *type_str)
+{
+    if (strcmp(type_str, "int") == 0)
+        return NBSM_INTEGER;
+
+    if (strcmp(type_str, "float") == 0)
+        return NBSM_FLOAT;
+
+    if (strcmp(type_str, "bool") == 0)
+        return NBSM_BOOLEAN;
+
+    return -1;
+}
+
+static NBSM_ConditionType GetConditionTypeFromJSON(const char *type_str)
+{
+    if (strcmp(type_str, "eq") == 0)
+        return NBSM_EQ;
+
+    if (strcmp(type_str, "neq") == 0)
+        return NBSM_NEQ;
+
+    if (strcmp(type_str, "lt") == 0)
+        return NBSM_LT;
+
+    if (strcmp(type_str, "lte") == 0)
+        return NBSM_LTE;
+
+    if (strcmp(type_str, "gt") == 0)
+        return NBSM_GT;
+
+    if (strcmp(type_str, "gte") == 0)
+        return NBSM_GTE;
+
+    return -1;
+}
+
+#endif // NBSM_JSON_BUILDER
 
 #pragma endregion // State machine
 
