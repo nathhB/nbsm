@@ -1,2 +1,3 @@
 editor/build*
+tests/suite
 .vscode
