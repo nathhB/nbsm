@@ -1,0 +1,127 @@
+{
+    "variables": [
+        {
+            "name": "v1",
+            "type": "int"
+        },
+        {
+            "name": "v2",
+            "type": "float"
+        },
+        {
+            "name": "v3",
+            "type": "bool"
+        },
+        {
+            "name": "v4",
+            "type": "float"
+        }
+    ],
+    "states": [
+        {
+            "name": "foo",
+            "is_initial": true
+        },
+        {
+            "name": "bar",
+            "is_initial": false
+        },
+        {
+            "name": "plop",
+            "is_initial": false
+        },
+        {
+            "name": "toto",
+            "is_initial": false
+        }
+    ],
+    "transitions": [
+        {
+            "source": "foo",
+            "target": "bar",
+            "conditions": [
+                {
+                    "type": "eq",
+                    "left_op": "v1",
+                    "right_op": {
+                        "type": "const",
+                        "const": {
+                            "type": "int",
+                            "value": 42
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "source": "bar",
+            "target": "plop",
+            "conditions": [
+                {
+                    "type": "gt",
+                    "left_op": "v2",
+                    "right_op": {
+                        "type": "const",
+                        "const": {
+                            "type": "float",
+                            "value": 100.525
+                        }
+                    }
+                },
+                {
+                    "type": "eq",
+                    "left_op": "v3",
+                    "right_op": {
+                        "type": "const",
+                        "const": {
+                            "type": "bool",
+                            "value": true
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "source": "plop",
+            "target": "foo",
+            "conditions": [
+                {
+                    "type": "eq",
+                    "left_op": "v3",
+                    "right_op": {
+                        "type": "const",
+                        "const": {
+                            "type": "bool",
+                            "value": false
+                        }
+                    }
+                },
+                {
+                    "type": "lt",
+                    "left_op": "v1",
+                    "right_op": {
+                        "type": "const",
+                        "const": {
+                            "type": "int",
+                            "value": 42
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "source": "foo",
+            "target": "toto",
+            "conditions": [
+                {
+                    "type": "lt",
+                    "left_op": "v2",
+                    "right_op": {
+                        "type": "var",
+                        "var": "v4"
+                    }
+                }
+            ]
+        }
+    ]
+}
