@@ -45,6 +45,10 @@ typedef void (*HTableDestroyItemFunc)(void *);
 #define NBSM_Alloc malloc
 #endif
 
+#ifndef NBSM_Realloc
+#define NBSM_Realloc realloc
+#endif
+
 #ifndef NBSM_Dealloc
 #define NBSM_Dealloc free
 #endif
@@ -103,6 +107,7 @@ typedef struct
     HTable *states;
     HTable *variables;
     NBSM_State *current;
+    NBSM_State *initial_state;
     void *user_data;
 } NBSM_Machine;
 
@@ -204,6 +209,21 @@ typedef struct
     unsigned int transition_count; 
 } NBSM_MachineBuilder;
 
+typedef struct NBSM_MachinePoolFreeBlock
+{
+    NBSM_Machine m;
+    struct NBSM_MachinePoolFreeBlock *next;
+} NBSM_MachinePoolFreeBlock;
+
+typedef struct
+{
+    NBSM_MachineBuilder *builder;
+    NBSM_Machine **machines;
+    unsigned int count;
+    unsigned int idx;
+    NBSM_MachinePoolFreeBlock *free;
+} NBSM_MachinePool;
+
 #pragma endregion // State machine
 
 #pragma endregion // Types
@@ -216,8 +236,25 @@ NBSM_Machine *NBSM_Create(void);
 // Create a new state machine from a machine builder
 NBSM_Machine *NBSM_Build(NBSM_MachineBuilder *builder);
 
-// Destroy the state machine and release memory
+// Create a new machine pool
+NBSM_MachinePool *NBSM_CreatePool(NBSM_MachineBuilder *builder, unsigned int initial_count);
+
+// Get a new state machine from a machine pool. If there is no free machine left in the pool, the pool size
+// will be increased (new memory will be allocated)
+NBSM_Machine *NBSM_GetFromPool(NBSM_MachinePool *pool);
+
+// Recycle a state machine that was created from a machine pool
+// The current state will be set back to the initial one
+void NBSM_Recycle(NBSM_MachinePool *pool, NBSM_Machine *machine);
+
+// Reset a state machine (set the current state to the initial one)
+void NBSM_Reset(NBSM_Machine *machine);
+
+// Destroy a state machine and release memory
 void NBSM_Destroy(NBSM_Machine *machine);
+
+// Destroy a machine pool and release memory
+void NBSM_DestroyPool(NBSM_MachinePool *pool);
 
 // Update the state machine (check if any transition needs to be executed based on conditions)
 void NBSM_Update(NBSM_Machine *machine);
@@ -516,6 +553,7 @@ static bool ConditionGTE(NBSM_Value *v1, NBSM_Value *v2);
 static void DestroyMachineValue(void *ptr);
 static void DestroyMachineState(void *ptr);
 static void DestroyMachineTransition(NBSM_Transition *transition);
+static void GrowPool(NBSM_MachinePool *pool, unsigned int count);
 
 #ifdef NBSM_JSON_BUILDER
 
@@ -581,12 +619,72 @@ NBSM_Machine *NBSM_Build(NBSM_MachineBuilder *builder)
     return machine;
 }
 
+NBSM_MachinePool *NBSM_CreatePool(NBSM_MachineBuilder *builder, unsigned int initial_count)
+{
+    NBSM_MachinePool *pool = NBSM_Alloc(sizeof(NBSM_MachinePool));
+
+    pool->builder = builder;
+    pool->machines = NULL;
+    pool->count = 0;
+    pool->idx = 0;
+    pool->free = NULL;
+
+    GrowPool(pool, initial_count);
+
+    return pool;
+}
+
+NBSM_Machine *NBSM_GetFromPool(NBSM_MachinePool *pool)
+{
+    if (pool->free)
+    {
+        void *free = pool->free;
+
+        pool->free = pool->free->next;
+
+        return free;
+    }
+
+    if (pool->idx == pool->count)
+        GrowPool(pool, pool->count * 2);
+
+    NBSM_Machine *machine = pool->machines[pool->idx];
+
+    pool->idx++;
+
+    return machine;
+}
+
+void NBSM_Recycle(NBSM_MachinePool *pool, NBSM_Machine *machine)
+{
+    NBSM_Reset(machine);
+
+    NBSM_MachinePoolFreeBlock *free = pool->free;
+
+    pool->free = (void *)machine;
+    pool->free->next = free;
+}
+
+void NBSM_Reset(NBSM_Machine *machine)
+{
+    machine->current = machine->initial_state;
+}
+
 void NBSM_Destroy(NBSM_Machine *machine)
 {
     DestroyHTable(machine->variables, true, DestroyMachineValue, false);
     DestroyHTable(machine->states, true, DestroyMachineState, false);
 
     NBSM_Dealloc(machine);
+}
+
+void NBSM_DestroyPool(NBSM_MachinePool *pool)
+{
+    for (unsigned int i = 0; i < pool->count; i++)
+        NBSM_Destroy(pool->machines[i]);
+
+    NBSM_Dealloc(pool->machines);
+    NBSM_Dealloc(pool);
 }
 
 void NBSM_Update(NBSM_Machine *machine)
@@ -662,6 +760,7 @@ void NBSM_AddState(NBSM_Machine *machine, const char *name, bool is_initial)
         NBSM_Assert(!machine->current);
 
         machine->current = s;
+        machine->initial_state = s;
     }
 }
 
@@ -1063,6 +1162,16 @@ static void DestroyMachineTransition(NBSM_Transition *transition)
     }
 
     NBSM_Dealloc(transition);
+}
+
+static void GrowPool(NBSM_MachinePool *pool, unsigned int count)
+{
+    pool->machines = NBSM_Realloc(pool->machines, sizeof(NBSM_Machine *) * count);
+
+    for (unsigned int i = 0; i < count - pool->count; i++)
+        pool->machines[pool->count + i] = NBSM_Build(pool->builder);
+
+    pool->count = count;
 }
 
 #ifdef NBSM_JSON_BUILDER
