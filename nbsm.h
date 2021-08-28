@@ -21,6 +21,16 @@
 
 */
 
+/*
+    Include this header in *one* .c file after defining the NBSM_IMPL macro :
+
+    #define NBSM_IMPL
+
+    #include "nbsm.h"
+
+    See "tests/suite.c" for an example.
+*/
+
 #ifndef NBSM
 #define NBSM
 
@@ -97,12 +107,12 @@ typedef enum
 
 typedef enum
 {
-    NBSM_EQ,
-    NBSM_NEQ,
-    NBSM_LT,
-    NBSM_LTE,
-    NBSM_GT,
-    NBSM_GTE
+    NBSM_EQ,    // equal
+    NBSM_NEQ,   // not equal
+    NBSM_LT,    // lower than
+    NBSM_LTE,   // lower or equal than
+    NBSM_GT,    // greater than
+    NBSM_GTE    // greater or equal than
 } NBSM_ConditionType;
 
 typedef enum
@@ -169,7 +179,7 @@ struct __NBSM_Transition
     NBSM_Transition *next;
 };
 
-typedef void (*NBSM_StateHookFunc)(NBSM_Machine *machine);
+typedef void (*NBSM_StateHookFunc)(NBSM_Machine *machine, void *user_data);
 
 struct __NBSM_State
 {
@@ -751,7 +761,7 @@ void NBSM_Update(NBSM_Machine *machine)
         ChangeState(machine, t->target_state);
 
     if (machine->current->on_update)
-        machine->current->on_update(machine);
+        machine->current->on_update(machine, machine->current->user_data);
 }
 
 void NBSM_ChangeState(NBSM_Machine *machine, const char *name)
@@ -1048,10 +1058,10 @@ static void ChangeState(NBSM_Machine *machine, NBSM_State *state)
     machine->current = state;
 
     if (prev_state->on_exit)
-        prev_state->on_exit(machine);
+        prev_state->on_exit(machine, prev_state->user_data);
 
     if (machine->current->on_enter)
-        machine->current->on_enter(machine);
+        machine->current->on_enter(machine, machine->current->user_data);
 }
 
 static NBSM_ConditionFunc GetConditionFunction(NBSM_ConditionType type)
