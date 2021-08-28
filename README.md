@@ -186,3 +186,11 @@ Either open the generated HTML file in your browser if you compiled for the web 
 `./nbsm_editor /path/to/test.json`
 
 it will crate a new JSON file if the specified one does not exist or load it if it does exist.
+
+### TODO
+
+Here is a list of editor features yet to to be implemented:
+
+* rename states
+* use variables as the right operand of a condition
+* host a web version of the editor
