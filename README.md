@@ -1,6 +1,6 @@
 # nbsm
 
-*nbsm* is a tiny single header C99 library for bulding finite state machines. It comes with a built-in JSON support to load state
+*nbsm* is a tiny single header C99 library for building finite state machines. It comes with a built-in JSON support to load state
 machines from JSON files generated with the [nbsm editor](). You can see a video of the editor [here](https://www.youtube.com/watch?v=f7_d8UYtxwI&ab_channel=NathanBIAGINI).
 
 ![nbsm_editor](https://github.com/nathhB/nbsm/blob/main/editor_screenshot.png)
@@ -9,7 +9,7 @@ machines from JSON files generated with the [nbsm editor](). You can see a video
 
 ## How to use
 
-You can look at the [test suite](https://github.com/nathhB/nbsm/blob/main/tests/suite.c) for examples on how to use the *nbsm*'s API but here is a quick overview.
+You can look at the [test suite](https://github.com/nathhB/nbsm/blob/main/tests/suite.c) for examples of using the *nbsm*'s API, but here is a quick overview.
 
 ### Creating state machines
 
@@ -38,7 +38,7 @@ NBSM_AddTransition(m, "bar", "plop"); // create a transition between the "bar" s
 
 ### Creating variables
 
-Variables can be used to define conditions for transitions. The type of a variable can be either `integer`, `float` or `boolean`.
+Variables can be used to define conditions for transitions. The variable type can be either `integer`, `float` or `boolean`.
 
 ```
 NBSM_Value *v1 = NBSM_AddInteger(m, "v1");
@@ -79,7 +79,7 @@ typedef enum
 } NBSM_ConditionType;
 ```
 
-In order for a transition to be executed, all of its conditions must be true. If a transition has no condition, it will always be executed.
+For a transition to be executed, all of its conditions must be true. If a transition has no condition, it will always be executed.
 
 ### Updating
 
@@ -95,13 +95,13 @@ There are three types of state hooks:
 
 * `OnEnter` : called when a new state is entered
 * `OnExit` : called when the current state is exited
-* `OnUpdate` : callted when the current state is updated (every time `NBSM_Update` is called)
+* `OnUpdate` : called when the current state is updated (every time `NBSM_Update` is called)
 
-State hooks are just callback calls, here is the callback prototype:
+State hooks are just callbacks; here is the prototype:
 
 `typedef void (*NBSM_StateHookFunc)(NBSM_Machine *machine, void *user_data);`
 
-Here is how to set a state's hooks:
+To set a state's hooks:
 
 ```
 NBSM_OnStateEnter(m, "foo", OnEnterFunc); // set the "OnEnter" hook of the "foo" state
@@ -121,24 +121,24 @@ Generic user data can be attached to both the state machine itself or any of the
 
 ### Machine builder
 
-A machine builder is used to generate state machines. Machine builders are used as an interface between some external state machine description (such as a JSON file) and actual state machines.
+A machine builder is used to generate state machines. Machine builders are used as interfaces between external state machine descriptions (such as a JSON file) and actual state machines.
 
 *nbsm* comes with a built-in JSON machine builder.
 
 #### JSON
 
-JSON supports is made possible thanks to the [json.h](https://github.com/sheredom/json.h) library. In order to use it in your project, you need to grabd the `file.h` header, put it next to the `nbsm.h` header and define the `NBSM_JSON_BUILDER` before including `nbsm.h` (see the [test suite](https://github.com/nathhB/nbsm/blob/main/tests/suite.c) for an example).
+JSON supports is made possible thanks to the [json.h](https://github.com/sheredom/json.h) library. To use it in your project, you need to grab the `file.h` header, put it next to the `nbsm.h` header, and define the `NBSM_JSON_BUILDER` before including `nbsm.h` (see the [test suite](https://github.com/nathhB/nbsm/blob/main/tests/suite.c) for an example).
 
 ```
 NBSM_MachineBuilder *builder = NBSM_CreateBuilderFromJSON(json);
 NBSM_Machine *m = NBSM_Build(builder);
 ```
 
-The format of the JSON file is pretty straightforward, simply looking at the [json file](https://github.com/nathhB/nbsm/blob/main/tests/test.json) from the test suite should give you all the information you need.
+The JSON file format is pretty straightforward, simply looking at the [json file](https://github.com/nathhB/nbsm/blob/main/tests/test.json) from the test suite should give you all the information you need.
 
 ### Pooling
 
-If you plan on creating a lot of instance of the same state machine, you can use pooling to avoid reallocating memory every time you need to spawn a new state machine.
+If you plan to create many instances of the same state machine, you can use pooling to avoid reallocating memory every time you need to spawn a new state machine. A machine pool is associated with a machine builder to create new state machines when the pool capacity has been reached.
 
 ```
 NBSM_MachineBuilder *builder = NBSM_CreateBuilderFromJSON(json);
@@ -148,15 +148,15 @@ NBSM_Machine *m1 = NBSM_GetFromPool(pool);
 NBSM_Machine *m2 = NBSM_GetFromPool(pool);
 NBSM_Machine *m3 = NBSM_GetFromPool(pool); // the pool size will be increated to 4 (size * 2)
 
-NBSM_Recycle(pool, m1); // recycle a state machine that is no longer needed and put it back into the pool
+NBSM_Recycle(pool, m1); // recycle a state machine that is no longer needed and put it back into the pool.
 ```
 
-**IMPORTANT** : variables will not be reinitialized automatically when using pooling; so, don't forget to intialize the state machine's variables after grabbing it from the pool.
+**IMPORTANT** : variables will not be automatically reinitialized when using pooling; so, don't forget to initialize the state machine's variables after grabbing it from the pool.
 
 ### Cleaning up
 
-Call `NBSM_Destroy` to cleanup the memory allocated for a state machine.
+Call `NBSM_Destroy` to clean up the memory allocated for a state machine.
 
-Call `NBSM_DestroyBuilder` to cleanup the memory allocated for a machine builder.
+Call `NBSM_DestroyBuilder` to clean up the memory allocated for a machine builder.
 
-When using pooling, call `NBSM_DestroyPool` to cleanup the memory allocated for the whole pool. Do not use `NBSM_Destroy`.
+When using pooling, call `NBSM_DestroyPool` to clean up the memory allocated for the whole pool. Do not use `NBSM_Destroy`.
