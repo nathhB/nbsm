@@ -160,3 +160,26 @@ Call `NBSM_Destroy` to clean up the memory allocated for a state machine.
 Call `NBSM_DestroyBuilder` to clean up the memory allocated for a machine builder.
 
 When using pooling, call `NBSM_DestroyPool` to clean up the memory allocated for the whole pool. Do not use `NBSM_Destroy`.
+
+## nbsm editor
+
+### Compiling
+
+The nbsm editor relies on [raylib](https://github.com/raysan5/raylib) and [json-c](https://github.com/json-c/json-c), you need to compile both; then (using CMake):
+
+```
+cd editor
+mkdir build
+cd build
+cmake -DRAYLIB_LIBRARY_PATH=<PATH TO RAYLIB LIB FILE> -DRAYLIB_INCLUDE_PATH=<PATH TO RAYLIB INCLUDE DIR> -DJSONC_LIBRARY_PATH=<PATH TO JSONC-C LIB FILE> -DJSONC_INCLUDE_PATH=<PATH TO JSON-C INCLUDE DIR> ..
+```
+
+If you want to compile for the web, use `emcmake` (also make sure you compiled raylib and json-c for the web as well).
+
+### Using the editor
+
+Either open the generated HTML file in your browser if you compiled for the web or use the command line:
+
+`./nbsm_editor /path/to/test.json`
+
+it will crate a new JSON file if the specified one does not exist or load it if it does exist.
