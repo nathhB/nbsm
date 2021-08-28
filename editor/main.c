@@ -385,6 +385,8 @@ static void DoGUI(void)
     {
         if (Save(&machine, file_path) < 0)
             ui_state = CANNOT_SAVE_FILE;
+        else
+            printf("Saved!\n");
 #endif // EMSCRIPTEN
     }
 
@@ -723,9 +725,9 @@ static void DoNewConditionGUI(void)
 
         if (edited_cond)
         {
-            edited_cond->constant = input_value;
             edited_cond->type = dropdown2_active;
-            edited_cond->var = selected_var;
+            edited_cond->left_op = selected_var;
+            edited_cond->right_op.data.constant = input_value;
         }
         else
         {
@@ -780,7 +782,7 @@ static void DoEditTransitionGUI(void)
 
         char var_name[255] = {0};
 
-        snprintf(var_name, sizeof(var_name), "%s (%s)", cond->var->name, GetTypeName(cond->var->type));
+        snprintf(var_name, sizeof(var_name), "%s (%s)", cond->left_op->name, GetTypeName(cond->left_op->type));
 
         GuiTextBox(
             (Rectangle){rect.x + 17, (scroll_pan_rect.y + i * item_height) + scroll.y + 10, 210, 20},
@@ -796,7 +798,7 @@ static void DoEditTransitionGUI(void)
             strlen(type_name),
             false);
 
-        GetValueStr(val_str, cond->constant);
+        GetValueStr(val_str, cond->right_op.data.constant);
 
         GuiTextBox(
             (Rectangle){rect.x + 267, (scroll_pan_rect.y + i * item_height) + scroll.y + 10, 80, 20},
@@ -808,7 +810,7 @@ static void DoEditTransitionGUI(void)
         {
             edited_cond = cond;
             vars_str = BuildDropdownVariablesString();
-            dropdown_active = GetVariableIndex(cond->var);
+            dropdown_active = GetVariableIndex(cond->left_op);
             dropdown2_active = cond->type;
             ui_state = NEW_CONDITION;
         }
@@ -1320,7 +1322,7 @@ static bool IsVariableUsedByAnyCondition(EditorVariable *var)
 
             while (cond)
             {
-                if (cond->var == var)
+                if (cond->left_op == var)
                     return true;
 
                 cond = cond->next;
@@ -1349,8 +1351,8 @@ static void UpdateConditionsConstantType(EditorVariable *var, NBSM_ValueType typ
 
             while (cond)
             {
-                if (cond->var == var)
-                    cond->constant.type = type;
+                if (cond->left_op == var)
+                    cond->right_op.data.constant.type = type;
 
                 cond = cond->next;
             }

@@ -98,21 +98,15 @@ void Download(EditorStateMachine *machine, const char *file_name)
 int Save(EditorStateMachine *machine, const char *path)
 {
     json_object *root = MachineToJSON(machine);
-    const char *json = json_object_to_json_string_ext(root, JSON_C_TO_STRING_PRETTY);
+
+    if (json_object_to_file_ext(path, root, JSON_C_TO_STRING_PRETTY))
+    {
+        json_object_put(root);
+
+        return -1;
+    }
 
     json_object_put(root);
-
-    FILE *file = fopen(path, "w");
-
-    if (!file)
-        return -1;
-
-    int ret = fputs(json, file);
-
-    if (ret < 0)
-        return -1;
-
-    fclose(file);
 
     return 0;
 }
@@ -257,36 +251,48 @@ static void LoadConditions(EditorStateMachine *machine, EditorTransition *trans,
     {
         json_object *cond_obj = json_object_array_get_idx(cond_arr_obj, i);
         json_object *type_obj = json_object_object_get(cond_obj, "type");
-        json_object *var_name_obj = json_object_object_get(cond_obj, "var_name");
-        json_object *var_type_obj = json_object_object_get(cond_obj, "var_type");
-        json_object *const_val_obj = json_object_object_get(cond_obj, "const_val");
+        json_object *left_op_obj = json_object_object_get(cond_obj, "left_op");
 
-        EditorVariable *var = FindVariableByName(machine, json_object_get_string(var_name_obj));
+        EditorVariable *var = FindVariableByName(machine, json_object_get_string(left_op_obj));
 
         assert(var);
 
-        const char *type_str = json_object_get_string(var_type_obj);
-        NBSM_ValueType val_type = 0;
+        json_object *right_op_obj = json_object_object_get(cond_obj, "right_op");
+        json_object *right_op_type_obj = json_object_object_get(right_op_obj, "type");
 
-        for (; strcmp(type_str, json_var_types[val_type]) != 0 && val_type <= NBSM_BOOLEAN; val_type++);
+        if (strcmp(json_object_get_string(right_op_type_obj), "const") == 0)
+        {
+            json_object *const_obj = json_object_object_get(right_op_obj, "const");
+            json_object *const_type_obj = json_object_object_get(const_obj, "type");
+            json_object *const_val_obj = json_object_object_get(const_obj, "value");
 
-        assert(var->type == val_type);
+            const char *type_str = json_object_get_string(const_type_obj);
+            NBSM_ValueType const_type = 0;
 
-        NBSM_Value constant = { .type = val_type };
+            for (; strcmp(type_str, json_var_types[const_type]) != 0 && const_type <= NBSM_BOOLEAN; const_type++);
 
-        if (val_type == NBSM_BOOLEAN)
-            constant.value.b = json_object_get_boolean(const_val_obj);
-        else if (val_type == NBSM_INTEGER)
-            constant.value.i = json_object_get_int(const_val_obj);
-        else if (val_type == NBSM_FLOAT)
-            constant.value.f = json_object_get_double(const_val_obj);
+            assert(var->type == const_type);
 
-        const char *cond_type_str = json_object_get_string(type_obj);
-        NBSM_ConditionType cond_type = 0;
+            NBSM_Value constant = {.type = const_type};
 
-        for (; strcmp(cond_type_str, json_cond_types[cond_type]) != 0 && cond_type <= NBSM_GTE; cond_type++);
+            if (const_type == NBSM_BOOLEAN)
+                constant.value.b = json_object_get_boolean(const_val_obj);
+            else if (const_type == NBSM_INTEGER)
+                constant.value.i = json_object_get_int(const_val_obj);
+            else if (const_type == NBSM_FLOAT)
+                constant.value.f = json_object_get_double(const_val_obj);
 
-        AddConditionToTransition(trans, cond_type, var, constant);
+            const char *cond_type_str = json_object_get_string(type_obj);
+            NBSM_ConditionType cond_type = 0;
+
+            for (; strcmp(cond_type_str, json_cond_types[cond_type]) != 0 && cond_type <= NBSM_GTE; cond_type++);
+
+            AddConditionToTransition(trans, cond_type, var, constant);
+        }
+        else
+        {
+            abort(); // TODO
+        }
     }
 }
 
@@ -401,25 +407,36 @@ static json_object *BuildTransitionConditionArray(EditorTransition *trans)
         json_object *cond_obj = json_object_new_object();
 
         json_object_object_add(cond_obj, "type", json_object_new_string(json_cond_types[cond->type]));
-        json_object_object_add(cond_obj, "var_name", json_object_new_string(cond->var->name));
-        json_object_object_add(cond_obj, "var_type", json_object_new_string(json_var_types[cond->var->type]));
+        json_object_object_add(cond_obj, "left_op", json_object_new_string(cond->left_op->name));
 
-        json_object *const_val_obj = NULL;
+        json_object *right_op_obj = json_object_new_object();
 
-        if (cond->var->type == NBSM_BOOLEAN)
-            const_val_obj = json_object_new_boolean(cond->constant.value.b);
-        else if (cond->var->type == NBSM_INTEGER)
-            const_val_obj = json_object_new_int(cond->constant.value.i);
-        else if (cond->var->type == NBSM_FLOAT)
+        json_object_object_add(cond_obj, "right_op", right_op_obj);
+
+        json_object *const_val_obj = json_object_new_object();
+
+        json_object_object_add(right_op_obj, "type", json_object_new_string("const"));
+        json_object_object_add(right_op_obj, "const", const_val_obj);
+
+        if (cond->left_op->type == NBSM_BOOLEAN)
+        {
+            json_object_object_add(const_val_obj, "type", json_object_new_string("bool"));
+            json_object_object_add(const_val_obj, "value", json_object_new_boolean(cond->right_op.data.constant.value.b));
+        }
+        else if (cond->left_op->type == NBSM_INTEGER)
+        {
+            json_object_object_add(const_val_obj, "type", json_object_new_string("int"));
+            json_object_object_add(const_val_obj, "value", json_object_new_int(cond->right_op.data.constant.value.i));
+        }
+        else if (cond->left_op->type == NBSM_FLOAT)
         {
             char f_str[255] = {0};
 
-            snprintf(f_str, sizeof(f_str), "%.2f", cond->constant.value.f);
+            snprintf(f_str, sizeof(f_str), "%.2f", cond->right_op.data.constant.value.f);
 
-            const_val_obj = json_object_new_double_s(cond->constant.value.f, f_str);
-        }
-
-        json_object_object_add(cond_obj, "const_val", const_val_obj);
+            json_object_object_add(const_val_obj, "type", json_object_new_string("float"));
+            json_object_object_add(const_val_obj, "value", json_object_new_double_s(cond->right_op.data.constant.value.f, f_str));
+        } 
 
         json_object_array_add(arr_obj, cond_obj);
 

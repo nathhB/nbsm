@@ -241,8 +241,8 @@ EditorCondition *AddConditionToTransition(
     EditorCondition *cond = malloc(sizeof(EditorCondition));
 
     cond->type = type;
-    cond->var = var;
-    cond->constant = constant;
+    cond->left_op = var;
+    cond->right_op = (NBSM_ConditionOperandBlueprint){ .type = NBSM_OPERAND_CONST, .data = { .constant = constant } };
 
     if (!trans->conditions)
     {

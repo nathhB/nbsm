@@ -58,8 +58,8 @@ typedef struct __EditorCondition EditorCondition;
 struct __EditorCondition
 {
     NBSM_ConditionType type;
-    EditorVariable *var;
-    NBSM_Value constant;
+    EditorVariable *left_op;
+    NBSM_ConditionOperandBlueprint right_op;
     EditorCondition *next;
     EditorCondition *prev;
 };
