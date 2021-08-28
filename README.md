@@ -7,9 +7,8 @@ machines from JSON files generated with the [nbsm editor](). You can see a video
 
 *Disclaimer* : the nbsm editor is still a WIP.
 
-1. [How to use](https://github.com/json-c/json-c)
-3. [nbsm editor](https://github.com/json-c/json-c)
-
+1. [How to use](https://github.com/nathhB/nbsm#how-to-use)
+3. [nbsm editor](https://github.com/nathhB/nbsm#nbsm-editor)
 ## How to use
 
 You can look at the [test suite](https://github.com/nathhB/nbsm/blob/main/tests/suite.c) for examples of using the *nbsm*'s API, but here is a quick overview.
