@@ -3,6 +3,8 @@
 *nbsm* is a tiny single header C99 library for bulding finite state machines. It comes with a built-in JSON support to load state
 machines from JSON files generated with the [nbsm editor](). You can see a video of the editor [here](https://www.youtube.com/watch?v=f7_d8UYtxwI&ab_channel=NathanBIAGINI).
 
+*Disclaimer* : the nbsm editor is a WIP.
+
 ## How to use
 
 You can look at the [test suite](https://github.com/nathhB/nbsm/blob/main/tests/suite.c) for examples on how to use the *nbsm*'s API but here is a quick overview.
@@ -20,6 +22,10 @@ NBSM_AddState(m, "foo", true); // this is the initial state
 NBSM_AddState(m, "bar", false);
 NBSM_AddState(m, "plop", false);
 ```
+
+### Accessing the current state
+
+`m->current_state; // current state machine's state`
 
 ### Creating transitions between states
 
@@ -110,3 +116,45 @@ Generic user data can be attached to both the state machine itself or any of the
 `NBSM_AttachDataToState(m, "foo", some_data_ptr); // assign a generic data to the "foo" state`
 
 `m->user_data = some_data_ptr; // assign a generic data to a state machine`
+
+### Machine builder
+
+A machine builder is used to generate state machines. Machine builders are used as an interface between some external state machine description (such as a JSON file) and actual state machines.
+
+*nbsm* comes with a built-in JSON machine builder.
+
+#### JSON
+
+JSON supports is made possible thanks to the [json.h](https://github.com/sheredom/json.h) library. In order to use it in your project, you need to grabd the `file.h` header, put it next to the `nbsm.h` header and define the `NBSM_JSON_BUILDER` before including `nbsm.h` (see the [test suite](https://github.com/nathhB/nbsm/blob/main/tests/suite.c) for an example).
+
+```
+NBSM_MachineBuilder *builder = NBSM_CreateBuilderFromJSON(json);
+NBSM_Machine *m = NBSM_Build(builder);
+```
+
+The format of the JSON file is pretty straightforward, simply looking at the [json file](https://github.com/nathhB/nbsm/blob/main/tests/test.json) from the test suite should give you all the information you need.
+
+### Pooling
+
+If you plan on creating a lot of instance of the same state machine, you can use pooling to avoid reallocating memory every time you need to spawn a new state machine.
+
+```
+NBSM_MachineBuilder *builder = NBSM_CreateBuilderFromJSON(json);
+NBSM_MachinePool *pool = NBSM_CreatePool(builder, 2); // pool is created with 2 state machines
+
+NBSM_Machine *m1 = NBSM_GetFromPool(pool);
+NBSM_Machine *m2 = NBSM_GetFromPool(pool);
+NBSM_Machine *m3 = NBSM_GetFromPool(pool); // the pool size will be increated to 4 (size * 2)
+
+NBSM_Recycle(pool, m1); // recycle a state machine that is no longer needed and put it back into the pool
+```
+
+**IMPORTANT** : variables will not be reinitialized automatically when using pooling; so, don't forget to intialize the state machine's variables after grabbing it from the pool.
+
+### Cleaning up
+
+Call `NBSM_Destroy` to cleanup the memory allocated for a state machine.
+
+Call `NBSM_DestroyBuilder` to cleanup the memory allocated for a machine builder.
+
+When using pooling, call `NBSM_DestroyPool` to cleanup the memory allocated for the whole pool. Do not use `NBSM_Destroy`.
