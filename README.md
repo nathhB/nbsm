@@ -3,6 +3,8 @@
 *nbsm* is a tiny single header C99 library for bulding finite state machines. It comes with a built-in JSON support to load state
 machines from JSON files generated with the [nbsm editor](). You can see a video of the editor [here](https://www.youtube.com/watch?v=f7_d8UYtxwI&ab_channel=NathanBIAGINI).
 
+![nbsm_editor](https://github.com/nathhB/nbsm/blob/main/editor_screenshot.png)
+
 *Disclaimer* : the nbsm editor is a WIP.
 
 ## How to use
