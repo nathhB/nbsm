@@ -5,7 +5,10 @@ machines from JSON files generated with the [nbsm editor](). You can see a video
 
 ![nbsm_editor](https://github.com/nathhB/nbsm/blob/main/editor_screenshot.png)
 
-*Disclaimer* : the nbsm editor is a WIP.
+*Disclaimer* : the nbsm editor is still a WIP.
+
+1. [How to use](https://github.com/json-c/json-c)
+3. [nbsm editor](https://github.com/json-c/json-c)
 
 ## How to use
 
