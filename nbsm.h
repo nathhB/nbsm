@@ -58,15 +58,15 @@ typedef struct
     const char *key;
     void *item;
     unsigned int slot;
-} HTableEntry;
+} NBSM_HTableEntry;
 
 typedef struct
 {
-    HTableEntry **internal_array;
+    NBSM_HTableEntry **internal_array;
     unsigned int capacity;
     unsigned int count;
     float load_factor;
-} HTable;
+} NBSM_HTable;
 
 typedef void (*HTableDestroyItemFunc)(void *);
 
@@ -137,8 +137,8 @@ typedef struct __NBSM_State NBSM_State;
 
 typedef struct
 {
-    HTable *states;
-    HTable *variables;
+    NBSM_HTable *states;
+    NBSM_HTable *variables;
     NBSM_State *current;
     NBSM_State *initial_state;
     void *user_data;
@@ -286,6 +286,9 @@ void NBSM_Reset(NBSM_Machine *machine);
 // Destroy a state machine and release memory
 void NBSM_Destroy(NBSM_Machine *machine);
 
+// Destroy a state machine builder
+void NBSM_DestroyBuilder(NBSM_MachineBuilder *builder);
+
 // Destroy a machine pool and release memory
 void NBSM_DestroyPool(NBSM_MachinePool *pool);
 
@@ -350,12 +353,8 @@ bool NBSM_GetBoolean(NBSM_Value *var);
 // Get a variable from the state machine
 NBSM_Value *NBSM_GetVariable(NBSM_Machine *machine, const char *name);
 
-#ifdef NBSM_JSON_BUILDER
-
 // Create a new machine builder from a JSON file
 NBSM_MachineBuilder *NBSM_CreateBuilderFromJSON(const char *json);
-
-#endif // NBSM_JSON_BUILDER
 
 #pragma endregion // Public API
 
@@ -378,14 +377,14 @@ static unsigned long HashSDBM(const char *str)
     return hash;
 }
 
-static HTableEntry *FindHTableEntry(HTable *htable, const char *key)
+static NBSM_HTableEntry *FindHTableEntry(NBSM_HTable *htable, const char *key)
 {
     unsigned long hash = HashSDBM(key);
     unsigned int slot;
 
     //quadratic probing
 
-    HTableEntry *current_entry;
+    NBSM_HTableEntry *current_entry;
     unsigned int i = 0;
 
     do
@@ -404,19 +403,19 @@ static HTableEntry *FindHTableEntry(HTable *htable, const char *key)
     return NULL;
 }
 
-static bool DoesEntryExist(HTable *htable, const char *key)
+static bool DoesEntryExist(NBSM_HTable *htable, const char *key)
 {
     return !!FindHTableEntry(htable, key);
 }
 
-static unsigned int FindFreeSlotInHTable(HTable *htable, HTableEntry *entry, bool *use_existing_slot)
+static unsigned int FindFreeSlotInHTable(NBSM_HTable *htable, NBSM_HTableEntry *entry, bool *use_existing_slot)
 {
     unsigned long hash = HashSDBM(entry->key);
     unsigned int slot;
 
     // quadratic probing
 
-    HTableEntry *current_entry;
+    NBSM_HTableEntry *current_entry;
     unsigned int i = 0;
 
     do
@@ -437,11 +436,11 @@ static unsigned int FindFreeSlotInHTable(HTable *htable, HTableEntry *entry, boo
     return slot;
 }
 
-static HTable *CreateHTableWithCapacity(unsigned int capacity)
+static NBSM_HTable *CreateHTableWithCapacity(unsigned int capacity)
 {
-    HTable *htable = NBSM_Alloc(sizeof(HTable));
+    NBSM_HTable *htable = NBSM_Alloc(sizeof(NBSM_HTable));
 
-    htable->internal_array = NBSM_Alloc(sizeof(HTableEntry *) * capacity);
+    htable->internal_array = NBSM_Alloc(sizeof(NBSM_HTableEntry *) * capacity);
     htable->capacity = capacity;
     htable->count = 0;
     htable->load_factor = 0;
@@ -452,7 +451,7 @@ static HTable *CreateHTableWithCapacity(unsigned int capacity)
     return htable;
 }
 
-static void InsertHTableEntry(HTable *htable, HTableEntry *entry)
+static void InsertHTableEntry(NBSM_HTable *htable, NBSM_HTableEntry *entry)
 {
     bool use_existing_slot = false;
     unsigned int slot = FindFreeSlotInHTable(htable, entry, &use_existing_slot);
@@ -467,7 +466,7 @@ static void InsertHTableEntry(HTable *htable, HTableEntry *entry)
     }
 }
 
-static void RemoveHTableEntry(HTable *htable, HTableEntry *entry)
+static void RemoveHTableEntry(NBSM_HTable *htable, NBSM_HTableEntry *entry)
 {
     htable->internal_array[entry->slot] = NULL;
 
@@ -477,17 +476,17 @@ static void RemoveHTableEntry(HTable *htable, HTableEntry *entry)
     htable->load_factor = htable->count / htable->capacity;
 }
 
-static HTable *CreateHTable()
+static NBSM_HTable *CreateHTable()
 {
     return CreateHTableWithCapacity(NBSM_HTABLE_DEFAULT_INITIAL_CAPACITY);
 }
 
 static void DestroyHTable(
-    HTable *htable, bool destroy_items, HTableDestroyItemFunc destroy_item_func, bool destroy_keys)
+    NBSM_HTable *htable, bool destroy_items, HTableDestroyItemFunc destroy_item_func, bool destroy_keys)
 {
     for (unsigned int i = 0; i < htable->capacity; i++)
     {
-        HTableEntry *entry = htable->internal_array[i];
+        NBSM_HTableEntry *entry = htable->internal_array[i];
 
         if (entry)
         {
@@ -505,12 +504,12 @@ static void DestroyHTable(
     NBSM_Dealloc(htable);
 }
 
-static void GrowHTable(HTable *htable)
+static void GrowHTable(NBSM_HTable *htable)
 {
     unsigned int old_capacity = htable->capacity;
     unsigned int new_capacity = old_capacity * 2;
-    HTableEntry **old_internal_array = htable->internal_array;
-    HTableEntry **new_internal_array = NBSM_Alloc(sizeof(HTableEntry *) * new_capacity);
+    NBSM_HTableEntry **old_internal_array = htable->internal_array;
+    NBSM_HTableEntry **new_internal_array = NBSM_Alloc(sizeof(NBSM_HTableEntry *) * new_capacity);
 
     for (unsigned int i = 0; i < new_capacity; i++)
     {
@@ -533,9 +532,9 @@ static void GrowHTable(HTable *htable)
     NBSM_Dealloc(old_internal_array);
 }
 
-static void AddToHTable(HTable *htable, const char *key, void *item)
+static void AddToHTable(NBSM_HTable *htable, const char *key, void *item)
 {
-    HTableEntry *entry = NBSM_Alloc(sizeof(HTableEntry));
+    NBSM_HTableEntry *entry = NBSM_Alloc(sizeof(NBSM_HTableEntry));
 
     entry->key = key;
     entry->item = item;
@@ -546,16 +545,16 @@ static void AddToHTable(HTable *htable, const char *key, void *item)
         GrowHTable(htable);
 }
 
-static void *GetInHTable(HTable *htable, const char *key)
+static void *GetInHTable(NBSM_HTable *htable, const char *key)
 {
-    HTableEntry *entry = FindHTableEntry(htable, key);
+    NBSM_HTableEntry *entry = FindHTableEntry(htable, key);
 
     return entry ? entry->item : NULL;
 }
 
-static void *RemoveFromHTable(HTable *htable, const char *key)
+static void *RemoveFromHTable(NBSM_HTable *htable, const char *key)
 {
-    HTableEntry *entry = FindHTableEntry(htable, key);
+    NBSM_HTableEntry *entry = FindHTableEntry(htable, key);
 
     if (entry)
     {
