@@ -235,14 +235,14 @@ void RemoveVariableFromMachine(EditorStateMachine *machine, EditorVariable *var)
 EditorCondition *AddConditionToTransition(
         EditorTransition *trans,
         NBSM_ConditionType type,
-        EditorVariable *var,
-        NBSM_Value constant)
+        EditorVariable *left_op,
+        NBSM_ConditionOperandBlueprint right_op)
 {
     EditorCondition *cond = malloc(sizeof(EditorCondition));
 
     cond->type = type;
-    cond->left_op = var;
-    cond->right_op = (NBSM_ConditionOperandBlueprint){ .type = NBSM_OPERAND_CONST, .data = { .constant = constant } };
+    cond->left_op = left_op;
+    cond->right_op = right_op;
 
     if (!trans->conditions)
     {

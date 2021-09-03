@@ -731,7 +731,9 @@ static void DoNewConditionGUI(void)
         }
         else
         {
-            AddConditionToTransition(selected_trans, dropdown2_active, selected_var, input_value);
+            NBSM_ConditionOperandBlueprint right_op = {.type = NBSM_OPERAND_CONST, .data = {.constant = input_value}};
+
+            AddConditionToTransition(selected_trans, dropdown2_active, selected_var, right_op);
         }
 
         free(vars_str);

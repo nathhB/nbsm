@@ -113,8 +113,8 @@ void RemoveVariableFromMachine(EditorStateMachine *machine, EditorVariable *var)
 EditorCondition *AddConditionToTransition(
         EditorTransition *trans,
         NBSM_ConditionType type,
-        EditorVariable *var,
-        NBSM_Value constant);
+        EditorVariable *left_op,
+        NBSM_ConditionOperandBlueprint right_op);
 void RemoveConditionFromTransition(EditorTransition *trans, EditorCondition *cond);
 EditorState *FindStateByName(EditorStateMachine *machine, const char *name);
 EditorVariable *FindVariableByName(EditorStateMachine *machine, const char *name);

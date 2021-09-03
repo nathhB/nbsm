@@ -287,11 +287,21 @@ static void LoadConditions(EditorStateMachine *machine, EditorTransition *trans,
 
             for (; strcmp(cond_type_str, json_cond_types[cond_type]) != 0 && cond_type <= NBSM_GTE; cond_type++);
 
-            AddConditionToTransition(trans, cond_type, var, constant);
+            NBSM_ConditionOperandBlueprint right_op = {.type = NBSM_OPERAND_CONST, .data = {.constant = constant}};
+
+            AddConditionToTransition(trans, cond_type, var, right_op);
+        }
+        else if (strcmp(json_object_get_string(right_op_type_obj), "var") == 0)
+        {
+            json_object *var_obj = json_object_object_get(right_op_obj, "var");
+
+            NBSM_ConditionOperandBlueprint right_op = {
+                .type = NBSM_OPERAND_VAR,
+                .data = {.var_name = json_object_get_string(var_obj)}};
         }
         else
         {
-            abort(); // TODO
+            abort();
         }
     }
 }
