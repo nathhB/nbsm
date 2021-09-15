@@ -196,7 +196,7 @@ void TestLoadJSON(CuTest *tc)
 
     CuAssertStrEquals(tc, "toto", m->current->name);
 
-    NBSM_Destroy(m);
+    NBSM_Destroy(m, true);
     NBSM_DestroyBuilder(builder);
 }
 
@@ -261,7 +261,7 @@ void TestTransitionConditions(CuTest *tc)
 
     CuAssertStrEquals(tc, "toto", m->current->name);
 
-    NBSM_Destroy(m);
+    NBSM_Destroy(m, false);
 }
 
 void TestGetAndSetVariables(CuTest *tc)
@@ -288,7 +288,7 @@ void TestGetAndSetVariables(CuTest *tc)
     CuAssertTrue(tc, NBSM_GetFloat(v2) == 42.5);
     CuAssertTrue(tc, NBSM_GetBoolean(v3));
 
-    NBSM_Destroy(m);
+    NBSM_Destroy(m, false);
 }
 
 void TestTransitionNoCondition(CuTest *tc)
@@ -313,7 +313,7 @@ void TestTransitionNoCondition(CuTest *tc)
 
     CuAssertStrEquals(tc, "plop", m->current->name);
 
-    NBSM_Destroy(m);
+    NBSM_Destroy(m, false);
 }
 
 int main(void)

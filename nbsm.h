@@ -284,7 +284,7 @@ void NBSM_Recycle(NBSM_MachinePool *pool, NBSM_Machine *machine);
 void NBSM_Reset(NBSM_Machine *machine);
 
 // Destroy a state machine and release memory
-void NBSM_Destroy(NBSM_Machine *machine);
+void NBSM_Destroy(NBSM_Machine *machine, bool free_str);
 
 // Destroy a state machine builder
 void NBSM_DestroyBuilder(NBSM_MachineBuilder *builder);
@@ -619,14 +619,14 @@ NBSM_Machine *NBSM_Build(NBSM_MachineBuilder *builder)
     {
         NBSM_StateBlueprint *sb = &builder->states[i];
 
-        NBSM_AddState(machine, sb->name, sb->is_initial);
+        NBSM_AddState(machine, strdup(sb->name), sb->is_initial);
     }
 
     for (unsigned int i = 0; i < builder->variable_count; i++)
     {
         NBSM_VariableBlueprint *vb = &builder->variables[i];
 
-        NBSM_AddVariable(machine, vb->name, vb->type);
+        NBSM_AddVariable(machine, strdup(vb->name), vb->type);
     }
 
     for (unsigned int i = 0; i < builder->transition_count; i++)
@@ -702,10 +702,10 @@ void NBSM_Reset(NBSM_Machine *machine)
     machine->current = machine->initial_state;
 }
 
-void NBSM_Destroy(NBSM_Machine *machine)
+void NBSM_Destroy(NBSM_Machine *machine, bool free_str)
 {
-    DestroyHTable(machine->variables, true, DestroyMachineValue, false);
-    DestroyHTable(machine->states, true, DestroyMachineState, false);
+    DestroyHTable(machine->variables, true, DestroyMachineValue, free_str);
+    DestroyHTable(machine->states, true, DestroyMachineState, free_str);
 
     NBSM_Dealloc(machine);
 }
@@ -713,7 +713,7 @@ void NBSM_Destroy(NBSM_Machine *machine)
 void NBSM_DestroyPool(NBSM_MachinePool *pool)
 {
     for (unsigned int i = 0; i < pool->count; i++)
-        NBSM_Destroy(pool->machines[i]);
+        NBSM_Destroy(pool->machines[i], true);
 
     NBSM_Dealloc(pool->machines);
     NBSM_Dealloc(pool);
