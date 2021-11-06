@@ -34,6 +34,7 @@
 #ifndef NBSM
 #define NBSM
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
@@ -193,13 +194,13 @@ struct __NBSM_State
 
 typedef struct
 {
-    const char *name;
+    char *name;
     bool is_initial;
 } NBSM_StateBlueprint;
 
 typedef struct
 {
-    const char *name;
+    char *name;
     NBSM_ValueType type;
 } NBSM_VariableBlueprint;
 
@@ -218,14 +219,14 @@ typedef struct
 {
     unsigned int transition_idx;
     NBSM_ConditionType type;
-    const char *var_name;
+    char *var_name;
     NBSM_ConditionOperandBlueprint right_op;
 } NBSM_ConditionBlueprint;
 
 typedef struct
 {
-    const char *from;
-    const char *to;
+    char *from;
+    char *to;
     NBSM_ConditionBlueprint *conditions;
     unsigned int condition_count;
 } NBSM_TransitionBlueprint;
@@ -240,6 +241,8 @@ typedef struct
 
     NBSM_TransitionBlueprint *transitions;
     unsigned int transition_count; 
+
+    bool free_strings;
 } NBSM_MachineBuilder;
 
 typedef struct NBSM_MachinePoolFreeBlock
@@ -986,6 +989,8 @@ NBSM_MachineBuilder *NBSM_CreateBuilderFromJSON(const char *json)
     builder->transition_count = 0;
     builder->transitions = NULL;
 
+    builder->free_strings = true;
+
     struct json_value_s *root = json_parse(json, strlen(json));
 
     NBSM_Assert(root->type == json_type_object);
@@ -1027,19 +1032,50 @@ NBSM_MachineBuilder *NBSM_CreateBuilderFromJSON(const char *json)
 void NBSM_DestroyBuilder(NBSM_MachineBuilder *builder)
 {
     if (builder->states)
+    {
+        if (builder->free_strings)
+        {
+            for (unsigned int i = 0; i < builder->state_count; i++)
+                NBSM_Dealloc(builder->states[i].name);
+        }
+
         NBSM_Dealloc(builder->states);
+    }
 
     if (builder->variables)
+    {
+        if (builder->free_strings)
+        {
+            for (unsigned int i = 0; i < builder->variable_count; i++)
+                NBSM_Dealloc(builder->variables[i].name);
+        }
+
         NBSM_Dealloc(builder->variables);
+    }
     
     if (builder->transitions)
     {
         for (unsigned int i = 0; i < builder->transition_count; i++)
         {
-            NBSM_ConditionBlueprint *conditions = builder->transitions[i].conditions;
+            NBSM_TransitionBlueprint *transi = &builder->transitions[i];
+            NBSM_ConditionBlueprint *conditions = transi->conditions;
+
+            if (builder->free_strings)
+            {
+                NBSM_Dealloc(transi->from);
+                NBSM_Dealloc(transi->to);
+            }
 
             if (conditions)
+            {
+                if (builder->free_strings)
+                {
+                    for (unsigned int j = 0; j < transi->condition_count; j++)
+                        NBSM_Dealloc(transi->conditions[j].var_name);
+                }
+
                 NBSM_Dealloc(conditions);
+            }
         }
 
         NBSM_Dealloc(builder->transitions);
@@ -1231,7 +1267,7 @@ static void LoadVariablesFromJSON(NBSM_MachineBuilder *builder, struct json_arra
             {
                 NBSM_Assert(var_node->value->type == json_type_string);
 
-                var->name = ((struct json_string_s *)var_node->value->payload)->string;
+                var->name = strdup(((struct json_string_s *)var_node->value->payload)->string);
             }
             else if (strcmp(var_node->name->string, "type") == 0)
             {
@@ -1273,7 +1309,7 @@ static void LoadStatesFromJSON(NBSM_MachineBuilder *builder, struct json_array_s
             {
                 NBSM_Assert(state_node->value->type == json_type_string);
 
-                state->name = ((struct json_string_s *)state_node->value->payload)->string;
+                state->name = strdup(((struct json_string_s *)state_node->value->payload)->string);
             }
             else if (strcmp(state_node->name->string, "is_initial") == 0)
             {
@@ -1316,13 +1352,13 @@ static void LoadTransitionsFromJSON(NBSM_MachineBuilder *builder, struct json_ar
             {
                 NBSM_Assert(trans_node->value->type == json_type_string);
 
-                transition->from = ((struct json_string_s *)trans_node->value->payload)->string;
+                transition->from = strdup(((struct json_string_s *)trans_node->value->payload)->string);
             }
             else if (strcmp(trans_node->name->string, "target") == 0)
             {
                 NBSM_Assert(trans_node->value->type == json_type_string);
 
-                transition->to = ((struct json_string_s *)trans_node->value->payload)->string;
+                transition->to = strdup(((struct json_string_s *)trans_node->value->payload)->string);
             }
             else if (strcmp(trans_node->name->string, "conditions") == 0)
             {
@@ -1371,7 +1407,7 @@ static void LoadConditionsFromJSON(NBSM_TransitionBlueprint *transition, unsigne
             {
                 NBSM_Assert(cond_node->value->type == json_type_string);
 
-                cond->var_name = ((struct json_string_s *)cond_node->value->payload)->string;
+                cond->var_name = strdup(((struct json_string_s *)cond_node->value->payload)->string);
             }
             else if (strcmp(cond_node->name->string, "right_op") == 0)
             {
